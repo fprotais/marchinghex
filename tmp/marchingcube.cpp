@@ -1,0 +1,561 @@
+#include "marchingcube.h"
+#include "polycube_util.h"
+
+#include <geogram/points/colocate.h>
+#include "intersections.h"
+
+#define FOR(i, n) for(size_t i = 0; i < n; i++)
+static constexpr size_t NOT_AN_ID = (size_t)-1;
+
+// voxel with projesction
+
+namespace marchingcube {
+	static void renumber_facet(std::vector<size_t>& facet, const std::vector<size_t>& vert_id, const size_t facet_number) {
+		constexpr size_t facet_order[6][12] = {
+			{0,2 + 8,14 + 8,4,13 + 8,19 + 8,6,20 + 8,8 + 8,2,7 + 8,1 + 8},
+			{1,4 + 8,10 + 8,3,11 + 8,23 + 8,7,22 + 8,16 + 8,5,17 + 8,5 + 8},
+
+			{0,0 + 8,3 + 8,1,5 + 8,17 + 8,5,15 + 8,12 + 8,4,14 + 8,2 + 8},
+			{2,8 + 8,20 + 8,6,18 + 8,21 + 8,7,23 + 8,11 + 8,3,9 + 8,6 + 8},
+
+			{0,1 + 8,7 + 8,2,6 + 8,9 + 8,3,10 + 8,4 + 8,1,3 + 8,0 + 8},
+			{4,12 + 8,15 + 8,5,16 + 8,22 + 8,7,21 + 8,18 + 8,6,19 + 8,13 + 8}
+		};
+		std::vector<size_t> new_facet(facet.size());
+		size_t pos = 0;
+		FOR(i, 12) {
+			FOR(fv, facet.size()) if (vert_id[facet[fv]] == facet_order[facet_number][i]) {
+				new_facet[pos++] = facet[fv];
+				break;
+			}
+		}
+		facet.clear();
+		facet.assign(new_facet.begin(), new_facet.end());
+	}
+
+	inline std::pair<size_t, size_t> ordered_pair(const size_t v1, const size_t v2) {
+		if (v1 > v2) return { v1, v2 };
+		return { v2, v1 };
+	}
+
+	inline size_t prec_on_dual(const std::array<size_t, 24>& he_array, const size_t he) {
+		if (he > 24) return NOT_AN_ID;
+		if (he_array[he] == NOT_AN_ID) return NOT_AN_ID;
+		size_t curr_he = he;
+		size_t i = 0;
+		while (he_array[curr_he] != he) {
+			curr_he = he_array[curr_he];
+			if (i++ > 24) return NOT_AN_ID;
+		}
+		return curr_he;
+	}
+	std::array<size_t,24> extract_polyedra_dual(const std::array<bool, 8>& corner_is_in) {
+		std::array<size_t, 24> he_array = {
+			2,0,1,
+			4,5,3,
+			7,8,6,
+			11,9,10,
+			13,14,12,
+			17,15,16,
+			20,18,19,
+			22,23,21
+		};
+		// corner a, corner b, he a, he b
+		constexpr size_t edges[12][4] = {
+			{0,1,0,3},
+			{2,3,6,9},
+			{4,5,12,15},
+			{6,7,18,21},
+			{0,2,1,7},
+			{1,3,4,10},
+			{4,6,13,19},
+			{5,7,16,22},
+			{0,4,2,14},
+			{1,5,5,17},
+			{2,6,8,20},
+			{3,7,11,23},
+		};
+
+		FOR(i, 12) if (!corner_is_in[edges[i][0]] && !corner_is_in[edges[i][1]]) {
+			size_t a = prec_on_dual(he_array, edges[i][2]);
+			size_t b = prec_on_dual(he_array, edges[i][3]);
+			he_array[a] = he_array[edges[i][3]];
+			he_array[b] = he_array[edges[i][2]];
+			he_array[edges[i][2]] = NOT_AN_ID;
+			he_array[edges[i][3]] = NOT_AN_ID;
+		}
+		return he_array;
+	}
+
+	Polyedra extract_polyedra(const std::array<size_t, 24>& he_array, const std::array<bool, 8>& corner_is_in, const std::array<GEO::vec3, 8>& corners, const std::array<GEO::vec3, 24>& corner_bnd_alternative) {
+
+		std::vector<bool> mark(24, false);
+		Polyedra polyedra;
+		std::vector<size_t> vert_id;
+		std::vector<std::array<size_t, 3>> vert_facets;
+		constexpr std::array<size_t, 3> array_vert_facets[8] = { {0,2,4}, {1,2,4}, {0,3,4}, {1,3,4}, {0,2,5}, {1,2,5}, {0,3,5}, {1,3,5} };
+		size_t last_facet = 5;
+		FOR(he, 24) if ((!mark[he]) && (he_array[he] != NOT_AN_ID)) {
+			size_t c = he / 3;
+			if (corner_is_in[c]) {
+				polyedra.verts_.push_back(corners[c]);
+				vert_facets.push_back(array_vert_facets[c]);
+				mark[he + 1] = true;
+				mark[he + 2] = true;
+				vert_id.push_back(c);
+			}
+			else {
+				size_t curr_he = he;
+				last_facet++;
+				do {
+					mark[curr_he] = true;
+					polyedra.verts_.push_back(corner_bnd_alternative[curr_he]);
+					vert_id.push_back(8 + curr_he);
+					size_t c_local = curr_he / 3;
+					size_t he_local = curr_he % 3;
+					vert_facets.push_back({ last_facet, 0, 0 });
+					vert_facets.back()[1] = array_vert_facets[c_local][(he_local + 1) % 3];
+					vert_facets.back()[2] = array_vert_facets[c_local][(he_local + 2) % 3];
+					curr_he = he_array[curr_he];
+				} while (curr_he != he);
+			}
+
+		}
+
+
+		polyedra.facets_.resize(last_facet + 1);
+		FOR(v, polyedra.verts_.size()) FOR(i, 3) polyedra.facets_[vert_facets[v][i]].push_back(v);
+		FOR(f, 6) renumber_facet(polyedra.facets_[f], vert_id, f);
+		return polyedra;
+	}
+
+	Triangulated_Polyedra compute_polyedra_convex_hull(const Polyedra& polyedra) {
+		Triangulated_Polyedra triangles; 
+
+		triangles.verts_.resize(polyedra.verts_.size());
+		FOR(v, polyedra.verts_.size()) triangles.verts_[v] = polyedra.verts_[v];
+		// build an initial triangulation
+		FOR(f, polyedra.facets_.size()) {
+			if (polyedra.facets_[f].size() < 3) continue;
+			size_t off_t = triangles.triangles_.size();
+			triangles.triangles_.resize(off_t + polyedra.facets_[f].size() - 2);
+			triangles.triangles_original_facets_.resize(off_t + polyedra.facets_[f].size() - 2);
+			triangles.triangles_adjacent_.resize(off_t + polyedra.facets_[f].size() - 2, { NOT_AN_ID,NOT_AN_ID ,NOT_AN_ID });
+			FOR(t, polyedra.facets_[f].size() - 2) {
+				triangles.triangles_[off_t + t][0] = polyedra.facets_[f][0];
+				triangles.triangles_[off_t + t][1] = polyedra.facets_[f][t + 1];
+				triangles.triangles_[off_t + t][2] = polyedra.facets_[f][t + 2];
+				if (t > 0) triangles.triangles_adjacent_[off_t + t][0] = off_t + t - 1;
+				if (t < polyedra.facets_[f].size() - 3) triangles.triangles_adjacent_[off_t + t][2] = off_t + t + 1;
+				triangles.triangles_original_facets_[off_t + t] = f; 
+			}
+		}
+
+		// we do edge swaps until it is convex
+		bool good = true;
+		do {
+			good = true;
+			FOR(i, 3*triangles.triangles_.size()) {
+				size_t f = i / 3;
+				size_t fe = i % 3;
+				size_t f2 = triangles.triangles_adjacent_[f][fe];
+				if (f2 == NOT_AN_ID) continue;
+				GEO::vec3 e = triangles.verts_[triangles.triangles_[f][(fe + 1) % 3]]
+					- triangles.verts_[triangles.triangles_[f][fe]];
+				GEO::vec3 n1 = GEO::cross(
+					triangles.verts_[triangles.triangles_[f][1]] - triangles.verts_[triangles.triangles_[f][0]],
+					triangles.verts_[triangles.triangles_[f][2]] - triangles.verts_[triangles.triangles_[f][0]]
+				);
+				GEO::vec3 n2 = GEO::cross(
+					triangles.verts_[triangles.triangles_[f2][1]] - triangles.verts_[triangles.triangles_[f2][0]],
+					triangles.verts_[triangles.triangles_[f2][2]] - triangles.verts_[triangles.triangles_[f2][0]]
+				);
+				if (GEO::dot(e, GEO::cross(n1, n2)) < 0) {
+					size_t tri1[3];
+					FOR(li, 3) tri1[li] = triangles.triangles_[f][(fe + li) % 3];
+					size_t fe2 = triangles.triangles_[f2][0] == tri1[0] ? 2 : triangles.triangles_[f2][1] == tri1[0] ? 0 : 1;
+					size_t tri2[3];
+					FOR(li, 3) tri2[li] = triangles.triangles_[f2][(fe2 + li) % 3];
+					triangles.triangles_[f][0] = tri1[0];
+					triangles.triangles_[f][1] = tri2[2];
+					triangles.triangles_[f][2] = tri1[2];
+					triangles.triangles_[f2][0] = tri2[0];
+					triangles.triangles_[f2][1] = tri1[2];
+					triangles.triangles_[f2][2] = tri2[2];
+
+					// yepeeeeee
+					size_t f3 = triangles.triangles_adjacent_[f][(fe + 1) % 3];
+					size_t f4 = triangles.triangles_adjacent_[f][(fe + 2) % 3];
+					size_t f5 = triangles.triangles_adjacent_[f2][(fe2 + 1) % 3];
+					size_t f6 = triangles.triangles_adjacent_[f2][(fe2 + 2) % 3];
+
+					triangles.triangles_adjacent_[f][0] = f5;
+					triangles.triangles_adjacent_[f][1] = f2;
+					triangles.triangles_adjacent_[f][2] = f4;
+					triangles.triangles_adjacent_[f2][0] = f3;
+					triangles.triangles_adjacent_[f2][1] = f;
+					triangles.triangles_adjacent_[f2][2] = f6;
+
+					if (f3 != NOT_AN_ID) FOR(fe3, 3) if (triangles.triangles_adjacent_[f3][fe3] == f) triangles.triangles_adjacent_[f3][fe3] = f2;
+					if (f4 != NOT_AN_ID) FOR(fe4, 3) if (triangles.triangles_adjacent_[f4][fe4] == f) triangles.triangles_adjacent_[f4][fe4] = f;
+					if (f5 != NOT_AN_ID) FOR(fe5, 3) if (triangles.triangles_adjacent_[f5][fe5] == f2) triangles.triangles_adjacent_[f5][fe5] = f;
+					if (f6 != NOT_AN_ID) FOR(fe6, 3) if (triangles.triangles_adjacent_[f6][fe6] == f2) triangles.triangles_adjacent_[f6][fe6] = f2;
+					good = false;
+					break;
+
+				}
+			}
+		} while (!good);
+		return triangles;
+	}
+
+	GEO::vec3 center_of_polyedra_facet_with_flattening(const Triangulated_Polyedra& TP, const size_t Pfacet) {
+		std::vector<GEO::vec2> new_pos(TP.verts_.size());
+		if (Pfacet < 6) {
+			std::vector<bool> mark_v(TP.verts_.size(), false);
+			FOR(f, TP.triangles_.size()) if (TP.triangles_original_facets_[f] == Pfacet)
+				FOR(fv, 3) mark_v[TP.triangles_[f][fv]] = true;
+			size_t nb_vert = 0;
+			GEO::vec3 res;
+			FOR(v, TP.verts_.size()) if (mark_v[v]) {
+				res += TP.verts_[v];
+				nb_vert++;
+			}
+			return res/nb_vert;
+		}
+
+		std::vector<size_t> pile;
+		std::vector<bool> facet_is_plan(TP.triangles_.size(), false);
+		std::vector<bool> vertex_is_plan(TP.verts_.size(), false);
+		//plan 1st triangle
+		{
+			size_t f0 = NOT_AN_ID;
+			FOR(t, TP.triangles_.size()) if (TP.triangles_original_facets_[t] == Pfacet) {
+				f0 = t;
+				break;
+			}
+			geo_assert(f0 != NOT_AN_ID)
+			facet_is_plan[f0] = true;
+			GEO::vec3 e1 = TP.verts_[TP.triangles_[f0][1]] - TP.verts_[TP.triangles_[f0][0]];
+			GEO::vec3 e2 = TP.verts_[TP.triangles_[f0][2]] - TP.verts_[TP.triangles_[f0][0]];
+			double theta = acos(GEO::dot(GEO::normalize(e1), GEO::normalize(e2)));
+
+			new_pos[TP.triangles_[f0][0]] = GEO::vec2(0, 0);
+			new_pos[TP.triangles_[f0][1]] = e1.length() * GEO::vec2(1, 0);
+			new_pos[TP.triangles_[f0][2]] = e2.length() * GEO::vec2(cos(theta), sin(theta));
+
+			FOR(fv, 3) vertex_is_plan[TP.triangles_[f0][fv]] = true;
+			FOR(fc, 3) {
+				size_t f2 = TP.triangles_adjacent_[f0][fc];
+				if (f2 != NOT_AN_ID && TP.triangles_original_facets_[f2] == Pfacet)
+					pile.push_back(f2);
+			}
+
+		}
+		while (!pile.empty()) {
+			size_t f1 = pile.back(); pile.pop_back();
+			if (facet_is_plan[f1]) continue;
+			facet_is_plan[f1] = true;
+			size_t fv_no_plannar = 2;
+			FOR(fv, 2) if (!vertex_is_plan[TP.triangles_[f1][fv]]) fv_no_plannar = fv;
+			GEO::vec3 e1 = TP.verts_[TP.triangles_[f1][(fv_no_plannar + 2) % 3]] - TP.verts_[TP.triangles_[f1][(fv_no_plannar + 1) % 3]];
+			GEO::vec3 e2 = TP.verts_[TP.triangles_[f1][(fv_no_plannar + 0) % 3]] - TP.verts_[TP.triangles_[f1][(fv_no_plannar + 1) % 3]];
+			GEO::vec2 n1 = new_pos[TP.triangles_[f1][(fv_no_plannar + 2) % 3]] - new_pos[TP.triangles_[f1][(fv_no_plannar + 1) % 3]];
+			double theta = acos(GEO::dot(GEO::normalize(e1), GEO::normalize(e2)));
+
+			GEO::vec2 n2 = GEO::vec2(n1.x * cos(theta) - n1.y * sin(theta),  n1.x * sin(theta) + n1.y * cos(theta));
+			n2 *= e2.length() / e1.length();
+			new_pos[TP.triangles_[f1][fv_no_plannar]] = new_pos[TP.triangles_[f1][(fv_no_plannar + 1) % 3]] + n2;
+			vertex_is_plan[TP.triangles_[f1][fv_no_plannar]] = true;
+			FOR(fc, 3) {
+				size_t f2 = TP.triangles_adjacent_[f1][fc];
+				if (f2 == NOT_AN_ID) continue;
+				if (facet_is_plan[f2]) continue;
+				if (TP.triangles_original_facets_[f2] == Pfacet)
+					pile.push_back(f2);
+			}
+
+		}
+		GEO::vec2 plannar_center;
+		size_t nb_verts = 0;
+		FOR(v, TP.verts_.size()) if (vertex_is_plan[v]) {
+			plannar_center += new_pos[v];
+			nb_verts++;
+		}
+		plannar_center /= nb_verts;
+
+		FOR(t, TP.triangles_.size()) if (TP.triangles_original_facets_[t] == Pfacet) {
+			std::array<double, 3> l = { 0,0,0 };
+			bool is_in = Hexdom::intersections::point_is_in_triangle(
+				new_pos[TP.triangles_[t][0]],
+				new_pos[TP.triangles_[t][1]],
+				new_pos[TP.triangles_[t][2]],
+				plannar_center,
+				l
+				);
+			if (is_in) {
+				GEO::vec3 center;
+				FOR(fv, 3) center += l[fv] * TP.verts_[TP.triangles_[t][fv]];
+				return center;
+			}
+
+		}
+		geo_assert_not_reached;
+	}
+
+	Hexadreized_Polyedra extract_hexes_from_polyedra(const Triangulated_Polyedra& TPol, const Polyedra& P) {
+		Hexadreized_Polyedra hexes;
+		hexes.hexaedra_.resize(TPol.verts_.size());
+		
+		const size_t nb_pol_verts = TPol.verts_.size();
+		
+		size_t nb_pol_facets = P.facets_.size();
+		if (TPol.triangles_.size() == 0) return hexes;
+
+
+		std::vector<std::size_t> connected_composant;
+		size_t nb_of_composant = 0;
+		{
+			Hexdom::DisjointSet ds(P.verts_.size());
+			FOR(f, P.facets_.size()) FOR(fv, P.facets_[f].size())
+				ds.merge((int)P.facets_[f][fv], (int)(P.facets_[f][(fv + 1) % P.facets_[f].size()]));
+			GEO::vector<size_t> tmp;
+			nb_of_composant = ds.getSetsId(tmp);
+			connected_composant.assign(tmp.begin(), tmp.end());
+		}
+		hexes.verts_.resize(nb_pol_verts + nb_pol_facets + nb_of_composant);
+		FOR(v, nb_pol_verts) hexes.verts_[v] = TPol.verts_[v];
+		
+		std::vector<std::vector<size_t>> P_to_TP_facets(P.facets_.size());
+		FOR(t, TPol.triangles_.size()) P_to_TP_facets[TPol.triangles_original_facets_[t]].push_back(t);
+		std::vector<GEO::vec3> absolute_center(nb_of_composant);
+
+		std::vector<size_t> nb_of_center(nb_of_composant, 0);
+		FOR(f, P.facets_.size()) {
+			if (P.facets_[f].size() < 3) continue;
+			GEO::vec3 center = center_of_polyedra_facet_with_flattening(TPol, f);
+			hexes.verts_[nb_pol_verts + nb_of_composant + f] = center;
+			absolute_center[connected_composant[P.facets_[f][0]]] += center; nb_of_center[connected_composant[P.facets_[f][0]]]++;
+		}
+		FOR(i, nb_of_composant) geo_assert(nb_of_center[i] != 0);
+		FOR(i, nb_of_composant) absolute_center[i] /= nb_of_center[i];
+		FOR(i, nb_of_composant) hexes.verts_[nb_pol_verts + i] = absolute_center[i];
+
+		std::map<std::pair<size_t, size_t>, size_t> edge_mid_vertices;
+		{
+			std::vector<GEO::vec3> new_verts;
+			FOR(f, P.facets_.size()) FOR(fv, P.facets_[f].size()) {
+				const size_t v1 = P.facets_[f][fv];
+				const size_t v2 = P.facets_[f][(fv + 1) % P.facets_[f].size()];
+				edge_mid_vertices[ordered_pair(v1, v2)] = NOT_AN_ID;
+			}
+			for (auto& edge_mid_vertex : edge_mid_vertices) {
+				edge_mid_vertex.second = hexes.verts_.size() + new_verts.size();
+				new_verts.push_back(0.5 * (P.verts_[edge_mid_vertex.first.first] + P.verts_[edge_mid_vertex.first.second]));
+			}
+			hexes.verts_.resize(nb_pol_verts + nb_pol_facets + nb_of_composant + new_verts.size());
+			FOR(v, new_verts.size()) hexes.verts_[nb_pol_verts + nb_pol_facets + nb_of_composant + v] = new_verts[v];
+		}
+
+
+		std::vector<std::array<size_t, 3>> vert_neigh_verts(P.verts_.size(), { NOT_AN_ID, NOT_AN_ID, NOT_AN_ID });
+		std::vector<std::array<size_t, 3 >> vert_neigh_facets(P.verts_.size(), { NOT_AN_ID, NOT_AN_ID, NOT_AN_ID });
+		FOR(f, P.facets_.size()) FOR(fv, P.facets_[f].size()) {
+			FOR(i, 3) if (vert_neigh_verts[P.facets_[f][fv]][i] == -1) {
+				vert_neigh_verts[P.facets_[f][fv]][i] = P.facets_[f][(fv + 1) % P.facets_[f].size()];
+				vert_neigh_facets[P.facets_[f][fv]][i] = f;
+				break;
+			}
+		}
+		std::vector<std::vector<size_t>> facet_of_vertex(nb_pol_verts);
+		FOR(f, nb_pol_facets) FOR(fv, P.facets_[f].size()) facet_of_vertex[P.facets_[f][fv]].push_back(f);
+		FOR(v, nb_pol_verts) {
+
+			geo_assert(facet_of_vertex[v].size() == 3);
+
+			// renumbering so that everything is oriented well
+			std::array<size_t, 3> vecfacets = vert_neigh_facets[v];
+			std::array<size_t, 3> other_vertex = vert_neigh_verts[v];
+			bool v3_is_in_f1 = false;
+			FOR(fv, P.facets_[vecfacets[0]].size()) if (P.facets_[vecfacets[0]][fv] == (size_t)other_vertex[2]) v3_is_in_f1 = true;
+			if (!v3_is_in_f1) {
+				std::swap(vecfacets[1], vecfacets[2]);
+				std::swap(other_vertex[1], other_vertex[2]);
+			}
+				
+			hexes.hexaedra_[v][0] = v;
+			hexes.hexaedra_[v][1] = edge_mid_vertices[ordered_pair(v, other_vertex[0])];
+			hexes.hexaedra_[v][2] = edge_mid_vertices[ordered_pair(v, other_vertex[1])];
+			hexes.hexaedra_[v][3] = nb_pol_verts + nb_of_composant + vecfacets[1];
+			hexes.hexaedra_[v][4] = edge_mid_vertices[ordered_pair(v, other_vertex[2])];
+			hexes.hexaedra_[v][5] = nb_pol_verts + nb_of_composant + vecfacets[0];
+			hexes.hexaedra_[v][6] = nb_pol_verts + nb_of_composant + vecfacets[2];
+			hexes.hexaedra_[v][7] = nb_pol_verts + connected_composant[v];
+
+		}
+		return hexes;
+	}
+
+
+
+	static void display_in_geogram(std::vector<std::vector<std::vector<bool>>>& Vert_is_i, int start_in_X, int start_in_Y, int start_in_Z) {
+		size_t nb_in_X = Vert_is_i.size();
+		size_t nb_in_Y = Vert_is_i[0].size();
+		size_t nb_in_Z = Vert_is_i[0][0].size();
+		GEO::Mesh debug;
+		debug.vertices.create_vertices(nb_in_X * nb_in_Y * nb_in_Z);
+		for (int Xi = start_in_X; Xi < start_in_X + (int)nb_in_X; Xi++)
+			for (int Y = start_in_Y; Y < start_in_Y + (int)nb_in_Y; Y++)
+				for (int Z = start_in_Z; Z < start_in_Z + (int)nb_in_Z; Z++)
+					Hexdom::X(debug)[(Xi - start_in_X) * nb_in_Y * nb_in_Z + (Y - start_in_Y) * nb_in_Z + (Z - start_in_Z)] = GEO::vec3(Xi, Y, Z);
+		debug.cells.create_hexes((nb_in_X - 1) * (nb_in_Y - 1) * (nb_in_Z - 1));
+		for (int Xi = start_in_X; Xi < start_in_X + (int)nb_in_X - 1; Xi++)
+			for (int Y = start_in_Y; Y < start_in_Y + (int)nb_in_Y - 1; Y++)
+				for (int Z = start_in_Z; Z < start_in_Z + (int)nb_in_Z - 1; Z++)
+					FOR(k, 2) FOR(j, 2) FOR(i, 2) debug.cells.set_vertex(
+						(Xi - start_in_X) * (nb_in_Y - 1) * (nb_in_Z - 1) + (Y - start_in_Y) * (nb_in_Z - 1) + (Z - start_in_Z),
+						4 * k + 2 * j + i,
+						(Xi - start_in_X + i) * nb_in_Y * nb_in_Z + (Y - start_in_Y + j) * nb_in_Z + (Z - start_in_Z + k)
+					);
+		GEO::Attribute<size_t> is_in(debug.cells.attributes(), "in");
+		for (int Xi = start_in_X; Xi < start_in_X + (int)nb_in_X - 1; Xi++)
+			for (int Y = start_in_Y; Y < start_in_Y + (int)nb_in_Y - 1; Y++)
+				for (int Z = start_in_Z; Z < start_in_Z + (int)nb_in_Z - 1; Z++)
+					FOR(k, 2) FOR(j, 2) FOR(i, 2)
+					if (Vert_is_i[Xi - start_in_X + i][Y - start_in_Y + j][Z - start_in_Z + k])
+						is_in[(Xi - start_in_X) * (nb_in_Y - 1) * (nb_in_Z - 1) + (Y - start_in_Y) * (nb_in_Z - 1) + (Z - start_in_Z)] = true;
+		Hexdom::DROP(debug, "voxelgid");
+	}
+
+	void hexify(const GEO::Mesh& m, GEO::Mesh& hex) {
+		Hexdom::DROP(m, "input");
+		std::vector<std::array<size_t, 4>> tetraedras(m.cells.nb());
+		std::vector<GEO::vec3> geometry(m.vertices.nb());
+		FOR(v, m.vertices.nb()) geometry[v] = Hexdom::X(m)[v];
+		FOR(f, m.cells.nb()) FOR(fv, 4) tetraedras[f][fv] = m.cells.vertex(f, fv);
+
+		// NOW IS GEOGRAM-SAFE ZONE
+
+		GEO::vec3 bboxmax = geometry[0];
+		GEO::vec3 bboxmin = geometry[0];
+
+		FOR(v, geometry.size()) FOR(dim, 3) {
+			if (bboxmax[dim] < geometry[v][dim]) bboxmax[dim] = geometry[v][dim];
+			if (bboxmin[dim] > geometry[v][dim]) bboxmin[dim] = geometry[v][dim];
+		}
+		plop(bboxmax);
+		plop(bboxmin);
+		size_t nb_in_X = (size_t) std::ceil(bboxmax[0] - bboxmin[0]) + 1;
+		size_t nb_in_Y = (size_t) std::ceil(bboxmax[1] - bboxmin[1]) + 1;
+		size_t nb_in_Z = (size_t) std::ceil(bboxmax[2] - bboxmin[2]) + 1;
+		int start_in_X = (int)std::floor(bboxmin[0]);
+		int start_in_Y = (int)std::floor(bboxmin[1]);
+		int start_in_Z = (int)std::floor(bboxmin[2]);
+		std::vector<std::vector<std::vector<bool>>> Vert_is_in(nb_in_X, std::vector<std::vector<bool>>(nb_in_Y, std::vector<bool>(nb_in_Z, false)));
+
+		FOR(tet, tetraedras.size()) {
+			if (tet % 1000 == 0) std::cerr << "Extracting sources       :      " << tet << "  /   " << tetraedras.size() << std::endl;
+			GEO::vec3 A = geometry[tetraedras[tet][0]];
+			GEO::vec3 B = geometry[tetraedras[tet][1]];
+			GEO::vec3 C = geometry[tetraedras[tet][2]];
+			GEO::vec3 D = geometry[tetraedras[tet][3]];
+			GEO::vec3 min(1E10, 1E10, 1E10), max(-1E10, -1E10, -1E10);
+			FOR(cv, 4) FOR(d, 3) {
+				if (geometry[tetraedras[tet][cv]][d] > max[d]) max[d] = geometry[tetraedras[tet][cv]][d];
+				if (geometry[tetraedras[tet][cv]][d] < min[d]) min[d] = geometry[tetraedras[tet][cv]][d];
+			}
+			std::array<double,4> l;
+			for (int i = int(std::floor(min[0])); i < std::ceil(max[0]); i++)
+				for (int j = int(std::floor(min[1])); j < std::ceil(max[1]); j++)
+					for (int k = int(std::floor(min[2])); k < std::ceil(max[2]); k++) 
+						if (Hexdom::intersections::point_is_in_tet(A, B, C, D, GEO::vec3(i, j, k), l)) {
+							Vert_is_in[i - start_in_X][j - start_in_Y][k - start_in_Z] = true;
+						}
+		} 
+		//display_in_geogram(Vert_is_in, start_in_X, start_in_Y, start_in_Z);
+		std::vector<GEO::vec3> mc_verts;
+		std::vector<size_t> mc_cells;
+		for (int X = start_in_X; X < start_in_X + (int)nb_in_X - 1; X++) {
+			std::cerr << " Extracting cubes		 :		X = " << X << "    ->    " << start_in_X + (int)nb_in_X - 1 << std::endl;
+			for (int Y = start_in_Y; Y < start_in_Y + (int)nb_in_Y - 1; Y++) {
+				for (int Z = start_in_Z; Z < start_in_Z + (int)nb_in_Z - 1; Z++)
+				{
+					std::array<bool, 8> corner_is_in;
+					std::array<GEO::vec3, 8> corners;
+					std::array<GEO::vec3, 24> corner_bnd_alternative;
+					bool one_is_in = false;
+					FOR(k, 2) FOR(j, 2) FOR(i, 2) {
+						corner_is_in[4 * k + 2 * j + i] = Vert_is_in[X + i - start_in_X][Y + j - start_in_Y][Z + k - start_in_Z];
+						one_is_in = one_is_in || corner_is_in[4 * k + 2 * j + i];
+					}
+					if (!one_is_in) continue;
+					FOR(k, 2) FOR(j, 2) FOR(i, 2) {
+						corners[4 * k + 2 * j + i] = GEO::vec3((double)X + (double)i, (double)Y + (double)j, (double)Z + (double)k);
+					}
+					FOR(k, 2) FOR(j, 2) FOR(i, 2) FOR(dim, 3) {
+						size_t v = 4 * k + 2 * j + i;
+						GEO::vec3 shift; shift[dim] = 0.5;
+						if (dim == 0 && i == 1) shift[0] *= -1;
+						if (dim == 1 && j == 1) shift[1] *= -1;
+						if (dim == 2 && k == 1) shift[2] *= -1;
+						corner_bnd_alternative[3 * v + dim] = corners[v] + shift;
+					}
+
+					std::array<size_t, 24> he_array = extract_polyedra_dual(corner_is_in);
+					Polyedra polyedra = extract_polyedra(he_array, corner_is_in, corners, corner_bnd_alternative);
+					Triangulated_Polyedra polyedra_convex_hull = compute_polyedra_convex_hull(polyedra);
+					Hexadreized_Polyedra hexes = extract_hexes_from_polyedra(polyedra_convex_hull, polyedra);
+
+					size_t vert_init_size = mc_verts.size();
+					mc_verts.resize(vert_init_size + hexes.verts_.size());
+					FOR(v, hexes.verts_.size()) mc_verts[vert_init_size + v] = hexes.verts_[v];
+					size_t hex_init_size = mc_cells.size();
+					mc_cells.resize(hex_init_size + 8 * hexes.hexaedra_.size());
+					FOR(h, hexes.hexaedra_.size()) FOR(i, 8) mc_cells[hex_init_size + 8 * h + i] = vert_init_size + hexes.hexaedra_[h][i];
+				}
+			}
+		}
+
+		//removing isolated verts
+		{
+
+			std::vector<bool> mark(mc_verts.size(), false);
+			FOR(hv, mc_cells.size())  mark[mc_cells[hv]] = true;
+			std::vector<GEO::vec3> new_verts;
+			std::vector<size_t> old2new(mc_verts.size());
+			size_t curr = 0;
+			FOR(v, mc_verts.size()) if (mark[v]) {
+				new_verts.push_back(mc_verts[v]);
+				old2new[v] = curr++;
+			}
+			mc_verts.clear();
+			mc_verts.assign(new_verts.begin(), new_verts.end());
+			FOR(hv, mc_cells.size())  mc_cells[hv] = old2new[mc_cells[hv]];
+
+		}
+
+
+	// END OF GEOGRAM-SAFE ZONE
+		hex.vertices.create_vertices(mc_verts.size());
+		FOR(v, hex.vertices.nb()) Hexdom::X(hex)[v] = mc_verts[v];
+		hex.cells.create_hexes(mc_cells.size() / 8);
+		FOR(h, hex.cells.nb()) FOR(i, 8) hex.cells.set_vertex(h, i, mc_cells[8 * h + i]);
+		plop(hex.cells.nb());
+		GEO::Attribute<double> scaled_jacobian(hex.cell_corners.attributes(), "sj");
+		FOR(h, hex.cells.nb()) {
+			FOR(k, 2) FOR(j, 2) FOR(i, 2) {
+				scaled_jacobian[hex.cells.corner(h, 1 * i + 2 * j + 4 * k)] =
+					GEO::dot(
+						(1. - 2. * (double)k) * GEO::normalize(Hexdom::X(hex)[hex.cells.vertex(h, 1 * i + 2 * j + 4 * ((k + 1) % 2))] - Hexdom::X(hex)[hex.cells.vertex(h, 1 * i + 2 * j + 4 * k)]),
+						GEO::cross(
+							(1. - 2. * (double)i) * GEO::normalize(Hexdom::X(hex)[hex.cells.vertex(h, 1 * ((i + 1) % 2) + 2 * j + 4 * k)] - Hexdom::X(hex)[hex.cells.vertex(h, 1 * i + 2 * j + 4 * k)]),
+							(1. - 2. * (double)j) * GEO::normalize(Hexdom::X(hex)[hex.cells.vertex(h, 1 * i + 2 * ((j + 1) % 2) + 4 * k)] - Hexdom::X(hex)[hex.cells.vertex(h, 1 * i + 2 * j + 4 * k)])
+						)
+					);
+
+			}
+		}
+		Hexdom::DROP(hex, "marchingcube");
+	}
+}
+

@@ -23,9 +23,15 @@ inline void file_must_no_be_at_end(std::ifstream & f, const std::string& reason 
         exit(1);
     }
 }
-inline static bool string_start(std::string string, std::string start_of_string) {
-    if (string.size() < start_of_string.size()) return false;
-    return (std::string(string.begin(), string.begin() + (long int)start_of_string.size()) == start_of_string);
+inline static bool string_start(const std::string& string, const std::string& start_of_string) {
+    size_t start = 0;
+    FOR(i, string.size()) if (string[i] != ' ' && string[i] != '\t') {
+        start = (size_t)i;
+        break;
+    }
+    std::string copy_without_space(string.begin() + start, string.end());
+    if (copy_without_space.size() < start_of_string.size()) return false;
+    return (std::string(copy_without_space.begin(), copy_without_space.begin() + (long int)start_of_string.size()) == start_of_string);
 }
 void read_medit_format(const std::string& filename, std::vector<vec3>& verts_,  std::vector<int>& tets_) {
     //std::vector<vec3> verts_;
@@ -174,12 +180,13 @@ void read_medit_format(const std::string& filename, std::vector<vec3>& verts_,  
 }
 
 void write_medit_format(const std::string& filename, std::vector<vec3> verts_, std::vector<int> hexes_) {
-    std::ofstream out;
-    out.open(filename, std::ifstream::out);
-    if (out.fail()) {
+    std::ofstream out_f;
+    out_f.open(filename, std::ifstream::out);
+    if (out_f.fail()) {
         std::cerr << "Failed to open " << filename << std::endl;
         return;
     }
+    std::stringstream out;
     out << std::fixed << std::setprecision(4);
     out << "MeshVersionFormatted 2" << std::endl << std::endl;
     out << "Dimension" << std::endl << "3" <<  std::endl << std::endl;
@@ -206,6 +213,9 @@ void write_medit_format(const std::string& filename, std::vector<vec3> verts_, s
         out << "1" << std::endl;
     }
     out << "end" << std::endl;
+
+    out_f << out.rdbuf();
+    out_f.close();
 }
 
 int main(int argc, char** argv) {
@@ -222,6 +232,7 @@ int main(int argc, char** argv) {
     FOR(v, verts.size()) verts[v] = verts[v] / average_edge_size;
 
     std::cerr << "File loaded" << std::endl;
+    std::cerr << tets.size() << std::endl;
     std::vector<int> mc_hexes;
     std::vector<vec3> mc_verts;
     marchingcube::hexify(verts, tets, mc_verts, mc_hexes);

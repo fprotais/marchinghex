@@ -1,8 +1,7 @@
 #pragma once
 #include <array>
 #include <vector>
-#include <ultimaille/geometry.h>
-#include <ultimaille/volume.h>
+#include <ultimaille/all.h>
 
 using namespace UM;
 namespace marchingcube {

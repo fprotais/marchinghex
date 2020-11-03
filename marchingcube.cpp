@@ -1,6 +1,5 @@
 #include "marchingcube.h"
 #include "intersections.h"
-#include <ultimaille/disjointset.h>
 #include <map>
 
 #define FOR(i, n) for(int i = 0; i < n; i++)

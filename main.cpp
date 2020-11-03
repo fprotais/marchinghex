@@ -1,8 +1,7 @@
 #include <iostream>
 #include <cstdlib>
-#include <ultimaille/mesh_io.h>
-#include <ultimaille/surface.h>
-#include <ultimaille/polyline.h>
+#include <ultimaille/all.h>
+
 
 #include <string>
 #include <vector>
@@ -218,14 +217,33 @@ void write_medit_format(const std::string& filename, std::vector<vec3> verts_, s
     out_f.close();
 }
 
+void mcreadfile(const std::string& filename, std::vector<vec3>& verts, std::vector<int>& tets) {
+    if (std::string(filename.end() - 5, filename.end()) == std::string(".mesh"))
+        read_medit_format(filename, verts, tets);
+    else if (std::string(filename.end() - 8, filename.end()) == std::string(".geogram")) {
+        Tetrahedra m;
+        VolumeAttributes tmp = read_geogram(filename, m);
+        verts.resize(m.nverts());
+        FOR(v, m.nverts()) verts[v] = m.points[v];
+        tets.resize(4 * m.ncells());
+        FOR(t, m.ncells()) FOR(i, 4) tets[4 * t + i] = m.vert(t, i);
+    }
+    else {
+        std::cerr << "File format suffix not supported, use .geogram or .mesh" << std::endl;
+        exit(1);
+    }
+}
+
 int main(int argc, char** argv) {
     if (2>argc) {
         std::cerr << "Usage: " << argv[0] << " model.mesh" << std::endl;
+        std::cerr << "Alternatively, model.geogram" << std::endl;
+        std::cerr << "Model must be a tet mesh." << std::endl;
         return 1;
     }
     std::vector<vec3> verts;
     std::vector<int> tets;
-    read_medit_format(argv[1], verts, tets);
+    mcreadfile(argv[1], verts, tets);
     double average_edge_size = 0;
     FOR(t, tets.size() / 4) average_edge_size += (verts[tets[4 * t + 0]] - verts[tets[4 * t + 1]]).norm();
     average_edge_size /= tets.size() / 4;

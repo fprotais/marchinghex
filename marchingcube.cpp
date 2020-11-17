@@ -485,9 +485,9 @@ namespace marchingcube {
 			}
 		}
 
+		std::cerr << "Simplifying unecessary vertices" << std::endl;
 		//removing isolated verts
 		{
-
 			std::vector<bool> mark(mc_verts.size(), false);
 			FOR(hv, mc_cells.size())  mark[mc_cells[hv]] = true;
 			std::vector<vec3> new_verts;
@@ -501,6 +501,23 @@ namespace marchingcube {
 			mc_verts.assign(new_verts.begin(), new_verts.end());
 			FOR(hv, mc_cells.size())  mc_cells[hv] = old2new[mc_cells[hv]];
 
+		}
+
+		// colocating vertices 
+		{
+			std::vector<int> old2new;
+			colocate(mc_verts, old2new, 1E-6);
+			DisjointSet ds(mc_verts.size());
+			FOR(v, mc_verts.size()) ds.merge(v, old2new[v]);
+			int nb_group  = ds.get_sets_id(old2new);
+			std::cerr << nb_group << std::endl;
+			std::cerr << mc_verts.size() << std::endl;
+
+			std::vector<vec3> new_verts(nb_group);
+			FOR(v, mc_verts.size()) new_verts[old2new[v]] = mc_verts[v];
+			mc_verts.clear();
+			mc_verts.assign(new_verts.begin(), new_verts.end());
+			FOR(hv, mc_cells.size())  mc_cells[hv] = old2new[mc_cells[hv]];
 		}
 
 

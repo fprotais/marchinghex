@@ -2,10 +2,10 @@
 #include "intersections.h"
 #include <map>
 
+
+
 #define FOR(i, n) for(int i = 0; i < n; i++)
 static constexpr int NOT_AN_ID = -1;
-
-// voxel with projesction
 
 namespace marchingcube {
 	static void renumber_facet(std::vector<int>& facet, const std::vector<int>& vert_id, const int facet_number) {
@@ -47,8 +47,8 @@ namespace marchingcube {
 		}
 		return curr_he;
 	}
-	std::array<int,24> extract_polyedra_dual(const std::array<bool, 8>& corner_is_in) {
-		std::array<int, 24> he_array = {
+	void extract_polyedra_dual(const std::array<bool, 8>& corner_is_in, std::array<int, 24>& he_array) {
+		he_array = {
 			2,0,1,
 			4,5,3,
 			7,8,6,
@@ -82,13 +82,11 @@ namespace marchingcube {
 			he_array[edges[i][2]] = NOT_AN_ID;
 			he_array[edges[i][3]] = NOT_AN_ID;
 		}
-		return he_array;
 	}
 
-	Polyedra extract_polyedra(const std::array<int, 24>& he_array, const std::array<bool, 8>& corner_is_in, const std::array<vec3, 8>& corners, const std::array<vec3, 24>& corner_bnd_alternative) {
+	void extract_polyedra(const std::array<int, 24>& he_array, const std::array<bool, 8>& corner_is_in, const std::array<vec3, 8>& corners, const std::array<vec3, 24>& corner_bnd_alternative, Polyedra& polyedra) {
 
 		std::vector<bool> mark(24, false);
-		Polyedra polyedra;
 		std::vector<int> vert_id;
 		std::vector<std::array<int, 3>> vert_facets;
 		constexpr std::array<int, 3> array_vert_facets[8] = { {0,2,4}, {1,2,4}, {0,3,4}, {1,3,4}, {0,2,5}, {1,2,5}, {0,3,5}, {1,3,5} };
@@ -124,11 +122,9 @@ namespace marchingcube {
 		polyedra.facets_.resize(last_facet + 1);
 		FOR(v, polyedra.verts_.size()) FOR(i, 3) polyedra.facets_[vert_facets[v][i]].push_back(v);
 		FOR(f, 6) renumber_facet(polyedra.facets_[f], vert_id, f);
-		return polyedra;
 	}
 
-	Triangulated_Polyedra compute_polyedra_convex_hull(const Polyedra& polyedra) {
-		Triangulated_Polyedra triangles; 
+	void compute_polyedra_convex_hull(const Polyedra& polyedra, Triangulated_Polyedra& triangles) {
 
 		triangles.verts_.resize(polyedra.verts_.size());
 		FOR(v, polyedra.verts_.size()) triangles.verts_[v] = polyedra.verts_[v];
@@ -145,7 +141,7 @@ namespace marchingcube {
 				triangles.triangles_[off_t + t][2] = polyedra.facets_[f][t + 2];
 				if (t > 0) triangles.triangles_adjacent_[off_t + t][0] = off_t + t - 1;
 				if (t < polyedra.facets_[f].size() - 3) triangles.triangles_adjacent_[off_t + t][2] = off_t + t + 1;
-				triangles.triangles_original_facets_[off_t + t] = f; 
+				triangles.triangles_original_facets_[off_t + t] = f;
 			}
 		}
 
@@ -153,7 +149,7 @@ namespace marchingcube {
 		bool good = true;
 		do {
 			good = true;
-			FOR(i, 3*triangles.triangles_.size()) {
+			FOR(i, 3 * triangles.triangles_.size()) {
 				int f = i / 3;
 				int fe = i % 3;
 				int f2 = triangles.triangles_adjacent_[f][fe];
@@ -168,7 +164,7 @@ namespace marchingcube {
 					triangles.verts_[triangles.triangles_[f2][1]] - triangles.verts_[triangles.triangles_[f2][0]],
 					triangles.verts_[triangles.triangles_[f2][2]] - triangles.verts_[triangles.triangles_[f2][0]]
 				);
-				if (e * cross(n1, n2) < 0) {
+				if (e * cross(n1, n2) < -1E-8) {
 					int tri1[3];
 					FOR(li, 3) tri1[li] = triangles.triangles_[f][(fe + li) % 3];
 					int fe2 = triangles.triangles_[f2][0] == tri1[0] ? 2 : triangles.triangles_[f2][1] == tri1[0] ? 0 : 1;
@@ -204,7 +200,6 @@ namespace marchingcube {
 				}
 			}
 		} while (!good);
-		return triangles;
 	}
 
 	vec3 center_of_polyedra_facet_with_flattening(const Triangulated_Polyedra& TP, const int Pfacet) {
@@ -219,7 +214,7 @@ namespace marchingcube {
 				res += TP.verts_[v];
 				nb_vert++;
 			}
-			return res/nb_vert;
+			return res / nb_vert;
 		}
 
 		std::vector<int> pile;
@@ -236,11 +231,12 @@ namespace marchingcube {
 			facet_is_plan[f0] = true;
 			vec3 e1 = TP.verts_[TP.triangles_[f0][1]] - TP.verts_[TP.triangles_[f0][0]];
 			vec3 e2 = TP.verts_[TP.triangles_[f0][2]] - TP.verts_[TP.triangles_[f0][0]];
-			double theta = acos(e1.normalize()* e2.normalize());
+
+			double theta = std::acos(e1 * e2 / (e2.norm() * e1.norm()));
 
 			new_pos[TP.triangles_[f0][0]] = vec2(0, 0);
 			new_pos[TP.triangles_[f0][1]] = e1.norm() * vec2(1, 0);
-			new_pos[TP.triangles_[f0][2]] = e2.norm() * vec2(cos(theta), sin(theta));
+			new_pos[TP.triangles_[f0][2]] = e2.norm() * vec2(std::cos(theta), std::sin(theta));
 
 			FOR(fv, 3) vertex_is_plan[TP.triangles_[f0][fv]] = true;
 			FOR(fc, 3) {
@@ -248,8 +244,8 @@ namespace marchingcube {
 				if (f2 != NOT_AN_ID && TP.triangles_original_facets_[f2] == Pfacet)
 					pile.push_back(f2);
 			}
-
 		}
+
 		while (!pile.empty()) {
 			int f1 = pile.back(); pile.pop_back();
 			if (facet_is_plan[f1]) continue;
@@ -259,11 +255,12 @@ namespace marchingcube {
 			vec3 e1 = TP.verts_[TP.triangles_[f1][(fv_no_plannar + 2) % 3]] - TP.verts_[TP.triangles_[f1][(fv_no_plannar + 1) % 3]];
 			vec3 e2 = TP.verts_[TP.triangles_[f1][(fv_no_plannar + 0) % 3]] - TP.verts_[TP.triangles_[f1][(fv_no_plannar + 1) % 3]];
 			vec2 n1 = new_pos[TP.triangles_[f1][(fv_no_plannar + 2) % 3]] - new_pos[TP.triangles_[f1][(fv_no_plannar + 1) % 3]];
-			double theta = acos(e1.normalize() * e2.normalize());
+			double theta = std::acos(e1 * e2 / (e2.norm() * e1.norm()));
 
-			vec2 n2 = vec2(n1.x * cos(theta) - n1.y * sin(theta),  n1.x * sin(theta) + n1.y * cos(theta));
+			vec2 n2 = vec2(n1.x * std::cos(theta) - n1.y * std::sin(theta), n1.x * std::sin(theta) + n1.y * std::cos(theta));
 			n2 = n2 * e2.norm() / e1.norm();
 			new_pos[TP.triangles_[f1][fv_no_plannar]] = new_pos[TP.triangles_[f1][(fv_no_plannar + 1) % 3]] + n2;
+
 			vertex_is_plan[TP.triangles_[f1][fv_no_plannar]] = true;
 			FOR(fc, 3) {
 				int f2 = TP.triangles_adjacent_[f1][fc];
@@ -290,7 +287,7 @@ namespace marchingcube {
 				new_pos[TP.triangles_[t][2]],
 				plannar_center,
 				l
-				);
+			);
 			if (is_in) {
 				vec3 center;
 				FOR(fv, 3) center += l[fv] * TP.verts_[TP.triangles_[t][fv]];
@@ -298,19 +295,28 @@ namespace marchingcube {
 			}
 
 		}
-		constexpr bool should_be_reached = false;
-		assert(should_be_reached);
-		return vec3(0, 0, 0);
+
+		// in case center is outside 
+		std::vector<bool> mark_v(TP.verts_.size(), false);
+		FOR(f, TP.triangles_.size()) if (TP.triangles_original_facets_[f] == Pfacet)
+			FOR(fv, 3) mark_v[TP.triangles_[f][fv]] = true;
+		int nb_vert = 0;
+		vec3 res;
+		FOR(v, TP.verts_.size()) if (mark_v[v]) {
+			res += TP.verts_[v];
+			nb_vert++;
+		}
+		return res / nb_vert;
+
 	}
 
-	Hexadreized_Polyedra extract_hexes_from_polyedra(const Triangulated_Polyedra& TPol, const Polyedra& P) {
-		Hexadreized_Polyedra hexes;
+	void extract_hexes_from_polyedra(const Triangulated_Polyedra& TPol, const Polyedra& P, Hexadreized_Polyedra& hexes) {
 		hexes.hexaedra_.resize(TPol.verts_.size());
-		
+
 		const int nb_pol_verts = (int)TPol.verts_.size();
-		
+
 		int nb_pol_facets = (int)P.facets_.size();
-		if (TPol.triangles_.size() == 0) return hexes;
+		if (TPol.triangles_.size() == 0) return;
 
 
 		std::vector<int> connected_composant;
@@ -323,7 +329,7 @@ namespace marchingcube {
 		}
 		hexes.verts_.resize(nb_pol_verts + nb_pol_facets + nb_of_composant);
 		FOR(v, nb_pol_verts) hexes.verts_[v] = TPol.verts_[v];
-		
+
 		std::vector<std::vector<int>> P_to_TP_facets(P.facets_.size());
 		FOR(t, TPol.triangles_.size()) P_to_TP_facets[TPol.triangles_original_facets_[t]].push_back(t);
 		std::vector<vec3> absolute_center(nb_of_composant);
@@ -380,7 +386,7 @@ namespace marchingcube {
 				std::swap(vecfacets[1], vecfacets[2]);
 				std::swap(other_vertex[1], other_vertex[2]);
 			}
-				
+
 			hexes.hexaedra_[v][0] = v;
 			hexes.hexaedra_[v][1] = edge_mid_vertices[ordered_pair(v, other_vertex[0])];
 			hexes.hexaedra_[v][2] = edge_mid_vertices[ordered_pair(v, other_vertex[1])];
@@ -391,7 +397,6 @@ namespace marchingcube {
 			hexes.hexaedra_[v][7] = nb_pol_verts + connected_composant[v];
 
 		}
-		return hexes;
 	}
 
 
@@ -399,7 +404,7 @@ namespace marchingcube {
 
 	void hexify(const std::vector<vec3>& verts, const std::vector<int>& tets, std::vector<vec3>& out_verts, std::vector<int>& out_hexes) {
 		if (verts.empty()) return;
-		std::vector<std::array<int, 4>> tetraedras(tets.size()/4);
+		std::vector<std::array<int, 4>> tetraedras(tets.size() / 4);
 		std::vector<vec3> geometry(verts.size());
 		FOR(v, geometry.size()) geometry[v] = verts[v];
 		FOR(f, tetraedras.size()) FOR(fv, 4) tetraedras[f][fv] = tets[4 * f + fv];
@@ -412,11 +417,11 @@ namespace marchingcube {
 			if (bboxmax[dim] < geometry[v][dim]) bboxmax[dim] = geometry[v][dim];
 			if (bboxmin[dim] > geometry[v][dim]) bboxmin[dim] = geometry[v][dim];
 		}
-		std::cerr << " bboxmax  : "  << bboxmax << std::endl;
-		std::cerr << " bboxmin  : "  << bboxmin << std::endl;
-		int nb_in_X = (int) std::ceil(bboxmax[0] - bboxmin[0]) + 1;
-		int nb_in_Y = (int) std::ceil(bboxmax[1] - bboxmin[1]) + 1;
-		int nb_in_Z = (int) std::ceil(bboxmax[2] - bboxmin[2]) + 1;
+		std::cerr << " bboxmax  : " << bboxmax << std::endl;
+		std::cerr << " bboxmin  : " << bboxmin << std::endl;
+		int nb_in_X = (int)std::ceil(bboxmax[0] - bboxmin[0]) + 1;
+		int nb_in_Y = (int)std::ceil(bboxmax[1] - bboxmin[1]) + 1;
+		int nb_in_Z = (int)std::ceil(bboxmax[2] - bboxmin[2]) + 1;
 		int start_in_X = (int)std::floor(bboxmin[0]);
 		int start_in_Y = (int)std::floor(bboxmin[1]);
 		int start_in_Z = (int)std::floor(bboxmin[2]);
@@ -433,14 +438,14 @@ namespace marchingcube {
 				if (geometry[tetraedras[tet][cv]][d] > max[d]) max[d] = geometry[tetraedras[tet][cv]][d];
 				if (geometry[tetraedras[tet][cv]][d] < min[d]) min[d] = geometry[tetraedras[tet][cv]][d];
 			}
-			std::array<double,4> l;
+			std::array<double, 4> l;
 			for (int i = int(std::floor(min[0])); i < std::ceil(max[0]); i++)
 				for (int j = int(std::floor(min[1])); j < std::ceil(max[1]); j++)
-					for (int k = int(std::floor(min[2])); k < std::ceil(max[2]); k++) 
+					for (int k = int(std::floor(min[2])); k < std::ceil(max[2]); k++)
 						if (intersections::point_is_in_tet(A, B, C, D, vec3(i, j, k), l)) {
 							Vert_is_in[i - start_in_X][j - start_in_Y][k - start_in_Z] = true;
 						}
-		} 
+		}
 
 		std::vector<vec3> mc_verts;
 		std::vector<int> mc_cells;
@@ -470,10 +475,14 @@ namespace marchingcube {
 						corner_bnd_alternative[3 * v + dim] = corners[v] + shift;
 					}
 
-					std::array<int, 24> he_array = extract_polyedra_dual(corner_is_in);
-					Polyedra polyedra = extract_polyedra(he_array, corner_is_in, corners, corner_bnd_alternative);
-					Triangulated_Polyedra polyedra_convex_hull = compute_polyedra_convex_hull(polyedra);
-					Hexadreized_Polyedra hexes = extract_hexes_from_polyedra(polyedra_convex_hull, polyedra);
+					std::array<int, 24> he_array;
+					extract_polyedra_dual(corner_is_in, he_array);
+					Polyedra polyedra;
+					extract_polyedra(he_array, corner_is_in, corners, corner_bnd_alternative, polyedra);
+					Triangulated_Polyedra polyedra_convex_hull;
+					compute_polyedra_convex_hull(polyedra, polyedra_convex_hull);
+					Hexadreized_Polyedra hexes;
+					extract_hexes_from_polyedra(polyedra_convex_hull, polyedra, hexes);
 
 					int vert_init_size = (int)mc_verts.size();
 					mc_verts.resize(vert_init_size + hexes.verts_.size());
@@ -509,7 +518,7 @@ namespace marchingcube {
 			colocate(mc_verts, old2new, 1E-6);
 			DisjointSet ds(mc_verts.size());
 			FOR(v, mc_verts.size()) ds.merge(v, old2new[v]);
-			int nb_group  = ds.get_sets_id(old2new);
+			int nb_group = ds.get_sets_id(old2new);
 			std::cerr << nb_group << std::endl;
 			std::cerr << mc_verts.size() << std::endl;
 

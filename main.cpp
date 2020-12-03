@@ -2,7 +2,7 @@
 #include <cstdlib>
 #include <ultimaille/all.h>
 
-
+#include <chrono>
 #include <string>
 #include <vector>
 #include <iostream>
@@ -178,6 +178,7 @@ void read_medit_format(const std::string& filename, std::vector<vec3>& verts_,  
 
 }
 
+
 void write_medit_format(const std::string& filename, std::vector<vec3> verts_, std::vector<int> hexes_) {
     std::ofstream out_f;
     out_f.open(filename, std::ifstream::out);
@@ -200,15 +201,10 @@ void write_medit_format(const std::string& filename, std::vector<vec3> verts_, s
     out << "Hexahedra" << std::endl;
     out << hexes_.size() / 8 << std::endl;
     FOR(h, hexes_.size() / 8) {
-        out << hexes_[8 * h + 1] + 1 << " ";
-        out << hexes_[8 * h + 0] + 1 << " ";
-        out << hexes_[8 * h + 2] + 1 << " ";
-        out << hexes_[8 * h + 3] + 1 << " ";
-        out << hexes_[8 * h + 5] + 1 << " ";
-        out << hexes_[8 * h + 4] + 1 << " ";
-        out << hexes_[8 * h + 6] + 1 << " ";
-        out << hexes_[8 * h + 7] + 1 << " ";
-        //FOR(i, 8) out << hexes_[8*h + i]+1 << " ";
+        // geogram convention -> GMSH + Medit
+        constexpr std::array<int, 8> sign_of_det= { 0,2,1,3,4,6,5,7 };
+        constexpr std::array<int, 8> medit= { 1,0,2,3,5,4,6,7 };
+        FOR(i, 8) out << hexes_[8*h + sign_of_det[medit[i]]]+1 << " ";
         out << "1" << std::endl;
     }
     out << "end" << std::endl;
@@ -239,23 +235,48 @@ int main(int argc, char** argv) {
         std::cerr << "Usage: " << argv[0] << " model.mesh" << std::endl;
         std::cerr << "Alternatively, model.geogram" << std::endl;
         std::cerr << "Model must be a tet mesh." << std::endl;
+        std::cerr << "Opt : Arg2 is scale (double), default: 1." << std::endl;
+        std::cerr << "Opt : Arg3 is output name, default: res.mesh" << std::endl;
+        std::cerr << "Full use: " << argv[0] << " model.mesh 1 res.mesh" << std::endl;
         return 1;
     }
+    double scale = 1;
+    std::string outfile = "res.mesh";
+    if (argc > 2) scale = std::stod(argv[2]);
+    if (argc > 3) outfile = argv[3];
+    std::cerr << "scale: " << scale << std::endl;
+
+    std::cerr << "Loading File:" << argv[1] << std::endl;
+
     std::vector<vec3> verts;
     std::vector<int> tets;
+    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
     mcreadfile(argv[1], verts, tets);
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    std::cerr << "File loaded: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count()/1000. << "sec." << std::endl;
+    std::cerr << tets.size() << std::endl;
+    std::cerr << "Nb vertices: " << verts.size() << std::endl;
+    std::cerr << "Nb tets: " << tets.size() / 4 << std::endl;
+
+    std::cerr << "Rescaling" << std::endl;
     double average_edge_size = 0;
     FOR(t, tets.size() / 4) average_edge_size += (verts[tets[4 * t + 0]] - verts[tets[4 * t + 1]]).norm();
     average_edge_size /= tets.size() / 4;
-    FOR(v, verts.size()) verts[v] = verts[v] / average_edge_size;
+    FOR(v, verts.size()) verts[v] = scale * verts[v] / average_edge_size;
 
-    std::cerr << "File loaded" << std::endl;
-    std::cerr << tets.size() << std::endl;
+
     std::vector<int> mc_hexes;
     std::vector<vec3> mc_verts;
     marchingcube::hexify(verts, tets, mc_verts, mc_hexes);
-    std::cerr << "Writting res.mesh" << std::endl;
 
-    write_medit_format("res.mesh", mc_verts, mc_hexes);
+
+    std::cerr << "Nb vertices: " << mc_verts.size() << std::endl;
+    std::cerr << "Nb Hexes: " << mc_hexes.size() / 8 << std::endl;
+    std::cerr << "Writting " << outfile << std::endl;
+    begin = std::chrono::steady_clock::now();
+    write_medit_format(outfile, mc_verts, mc_hexes);
+    end = std::chrono::steady_clock::now();
+    std::cerr << "File writen: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() / 1000. << "sec." << std::endl;
+
     return 0;
 }

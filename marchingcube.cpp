@@ -1,7 +1,7 @@
 #include "marchingcube.h"
 #include "intersections.h"
 #include <map>
-
+#include <chrono>
 
 
 #define FOR(i, n) for(int i = 0; i < n; i++)
@@ -426,7 +426,7 @@ namespace marchingcube {
 		int start_in_Y = (int)std::floor(bboxmin[1]);
 		int start_in_Z = (int)std::floor(bboxmin[2]);
 		std::vector<std::vector<std::vector<bool>>> Vert_is_in(nb_in_X, std::vector<std::vector<bool>>(nb_in_Y, std::vector<bool>(nb_in_Z, false)));
-
+		std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 		FOR(tet, tetraedras.size()) {
 			if (tet % 1000 == 0) std::cerr << "Extracting sources       :      " << tet << "  /   " << tetraedras.size() << std::endl;
 			vec3 A = geometry[tetraedras[tet][0]];
@@ -446,9 +446,11 @@ namespace marchingcube {
 							Vert_is_in[i - start_in_X][j - start_in_Y][k - start_in_Z] = true;
 						}
 		}
-
+		std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+		std::cerr << "Source extraction: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() / 1000. << "sec." << std::endl;
 		std::vector<vec3> mc_verts;
 		std::vector<int> mc_cells;
+		begin = std::chrono::steady_clock::now();
 		for (int X = start_in_X; X < start_in_X + (int)nb_in_X - 1; X++) {
 			std::cerr << " Extracting cubes		 :		X = " << X << "    ->    " << start_in_X + (int)nb_in_X - 1 << std::endl;
 			for (int Y = start_in_Y; Y < start_in_Y + (int)nb_in_Y - 1; Y++) {
@@ -493,8 +495,10 @@ namespace marchingcube {
 				}
 			}
 		}
-
+		end = std::chrono::steady_clock::now();
+		std::cerr << "Hexaedra extraction: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() / 1000. << "sec." << std::endl;
 		std::cerr << "Simplifying unecessary vertices" << std::endl;
+		begin = std::chrono::steady_clock::now();
 		//removing isolated verts
 		{
 			std::vector<bool> mark(mc_verts.size(), false);
@@ -529,7 +533,8 @@ namespace marchingcube {
 			FOR(hv, mc_cells.size())  mc_cells[hv] = old2new[mc_cells[hv]];
 		}
 
-
+		end = std::chrono::steady_clock::now();
+		std::cerr << "Colocating and vertex simplification: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() / 1000. << " sec." << std::endl;
 		out_verts.assign(mc_verts.begin(), mc_verts.end());
 		out_hexes.assign(mc_cells.begin(), mc_cells.end());
 	}

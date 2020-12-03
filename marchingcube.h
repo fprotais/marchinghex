@@ -19,6 +19,7 @@ namespace marchingcube {
 		std::vector<std::array<int, 3>> triangles_adjacent_;
 		std::vector<int> triangles_original_facets_;
 	};
+	// Warning: the numbering convention is of Geogram. Its det has an opposite sign of vtk, hexalab.net and GMSH. See "write_medit_format" in main.cpp to handle conversion.
 	struct Hexadreized_Polyedra {
 		std::vector<std::array<int, 8>> hexaedra_;
 		std::vector<UM::vec3> verts_;

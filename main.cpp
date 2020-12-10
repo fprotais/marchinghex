@@ -55,7 +55,7 @@ int main(int argc, char** argv) {
         std::cerr << "Full use: " << argv[0] << " model.mesh 1 res.mesh" << std::endl;
         return 1;
     }
-    double scale = 0.75;
+    double scale = 1;
     std::string outfile = "res.mesh";
     if (argc > 2) scale = std::stod(argv[2]);
     if (argc > 3) outfile = argv[3];

@@ -1,7 +1,7 @@
 #pragma once
 #include <array>
 #include <vector>
-#include <ultimaille/all.h>
+#include <ultimaille/geometry.h>
 
 namespace marchingcube {
 

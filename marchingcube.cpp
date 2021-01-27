@@ -7,7 +7,7 @@
 
 #define FOR(i, n) for(int i = 0; i < n; i++)
 static constexpr int NOT_AN_ID = -1;
-
+using namespace UM;
 namespace marchingcube {
 	static void renumber_facet(std::vector<int>& facet, const std::vector<int>& vert_id, const int facet_number) {
 		constexpr int facet_order[6][12] = {
@@ -123,6 +123,7 @@ namespace marchingcube {
 		polyedra.facets_.resize(last_facet + 1);
 		FOR(v, polyedra.verts_.size()) FOR(i, 3) polyedra.facets_[vert_facets[v][i]].push_back(v);
 		FOR(f, 6) renumber_facet(polyedra.facets_[f], vert_id, f);
+		polyedra.vertex_id_.assign(vert_id.begin(), vert_id.end());
 	}
 
 	void compute_polyedra_convex_hull(const Polyedra& polyedra, Triangulated_Polyedra& triangles) {
@@ -311,14 +312,16 @@ namespace marchingcube {
 
 	}
 
-	void extract_hexes_from_polyedra(const Triangulated_Polyedra& TPol, const Polyedra& P, Hexadreized_Polyedra& hexes) {
+	inline bool is_wish(const vec3& v) {
+		return !(v.x == NO_WISH.x && v.y == NO_WISH.y && v.z == NO_WISH.z);
+	}
+	void extract_hexes_from_polyedra(const Triangulated_Polyedra& TPol, const Polyedra& P, Hexadreized_Polyedra& hexes, const std::array<vec3, 7>& wishes) {
 		hexes.hexaedra_.resize(TPol.verts_.size());
 
 		const int nb_pol_verts = (int)TPol.verts_.size();
 
 		int nb_pol_facets = (int)P.facets_.size();
 		if (TPol.triangles_.size() == 0) return;
-
 
 		std::vector<int> connected_composant;
 		int nb_of_composant = 0;
@@ -334,11 +337,19 @@ namespace marchingcube {
 		std::vector<std::vector<int>> P_to_TP_facets(P.facets_.size());
 		FOR(t, TPol.triangles_.size()) P_to_TP_facets[TPol.triangles_original_facets_[t]].push_back(t);
 		std::vector<vec3> absolute_center(nb_of_composant);
-
+		bool has_feature_corner = false;
 		std::vector<int> nb_of_center(nb_of_composant, 0);
 		FOR(f, P.facets_.size()) {
 			if (P.facets_[f].size() < 3) continue;
 			vec3 center = center_of_polyedra_facet_with_flattening(TPol, f);
+
+			if (f > 5 && is_wish(wishes[0])) {
+				if (nb_of_composant < 2) {
+					center = wishes[0];
+					has_feature_corner = true; 
+				}
+				else std::cerr << "A hard corner is unmatchable due to resolution" << std::endl;
+			}
 			hexes.verts_[nb_pol_verts + nb_of_composant + f] = center;
 			absolute_center[connected_composant[P.facets_[f][0]]] += center; nb_of_center[connected_composant[P.facets_[f][0]]]++;
 		}
@@ -347,20 +358,49 @@ namespace marchingcube {
 		FOR(i, nb_of_composant) hexes.verts_[nb_pol_verts + i] = absolute_center[i];
 
 		std::map<std::pair<int, int>, int> edge_mid_vertices;
+		std::vector<bool> vertex_is_hardedge(hexes.verts_.size(), false);
 		{
 			std::vector<vec3> new_verts;
+			std::map<std::pair<int, int>, vec3> edge_mid_vertices_wish;
+
 			FOR(f, P.facets_.size()) FOR(fv, P.facets_[f].size()) {
 				const int v1 = P.facets_[f][fv];
 				const int v2 = P.facets_[f][(fv + 1) % P.facets_[f].size()];
+				if (f < 6 && P.vertex_id_[v1] > 7 && P.vertex_id_[v2] > 7 && is_wish(wishes[f+1])) {
+					edge_mid_vertices_wish[ordered_pair(v1, v2)] = wishes[f + 1];
+				}
 				edge_mid_vertices[ordered_pair(v1, v2)] = NOT_AN_ID;
 			}
 			for (auto& edge_mid_vertex : edge_mid_vertices) {
 				edge_mid_vertex.second = (int)hexes.verts_.size() + (int)new_verts.size();
-				new_verts.push_back(0.5 * (P.verts_[edge_mid_vertex.first.first] + P.verts_[edge_mid_vertex.first.second]));
+				if (edge_mid_vertices_wish.find(edge_mid_vertex.first) == edge_mid_vertices_wish.end()) {
+					new_verts.push_back(0.5 * (P.verts_[edge_mid_vertex.first.first] + P.verts_[edge_mid_vertex.first.second]));
+					vertex_is_hardedge.push_back(false);
+				}
+				else {
+					new_verts.push_back(edge_mid_vertices_wish[edge_mid_vertex.first]);
+					vertex_is_hardedge.push_back(true);
+				}
 			}
 			hexes.verts_.resize(nb_pol_verts + nb_pol_facets + nb_of_composant + new_verts.size());
 			FOR(v, new_verts.size()) hexes.verts_[nb_pol_verts + nb_pol_facets + nb_of_composant + v] = new_verts[v];
 		}
+		if (!has_feature_corner) FOR(f, P.facets_.size()) if (f > 5) {
+			std::vector<vec3> set_vertices;
+			FOR(fv, P.facets_[f].size()) {
+				std::pair<int, int> p = ordered_pair(P.facets_[f][fv], P.facets_[f][(fv + 1) % P.facets_[f].size()]);
+				if (vertex_is_hardedge[edge_mid_vertices[p]])
+					set_vertices.push_back(hexes.verts_[edge_mid_vertices[p]]);
+			}
+			if (set_vertices.size() > 1) {
+				vec3 new_center;
+				FOR(i, set_vertices.size()) new_center += set_vertices[i];
+				new_center = new_center / set_vertices.size();
+				hexes.verts_[nb_pol_verts + nb_of_composant + f] = new_center;
+
+			}
+		}
+
 
 
 		std::vector<std::array<int, 3>> vert_neigh_verts(P.verts_.size(), { NOT_AN_ID, NOT_AN_ID, NOT_AN_ID });
@@ -400,11 +440,167 @@ namespace marchingcube {
 		}
 	}
 
+	static void extract_nodes(const std::vector<vec3>& geometry, const std::vector<std::array<int, 4>>& tetraedras, std::vector<std::vector<std::vector<bool>>>& Vert_is_in, const int start_in_X, const int start_in_Y, const int start_in_Z) {
+		FOR(tet, tetraedras.size()) {
+			if (tet % 1000 == 0) std::cerr << "Extracting sources       :      " << tet << "  /   " << tetraedras.size() << std::endl;
+			assert(tetraedras[tet][0] < geometry.size());
+			assert(tetraedras[tet][1] < geometry.size());
+			assert(tetraedras[tet][2] < geometry.size());
+			assert(tetraedras[tet][3] < geometry.size());
+			vec3 A = geometry[tetraedras[tet][0]];
+			vec3 B = geometry[tetraedras[tet][1]];
+			vec3 C = geometry[tetraedras[tet][2]];
+			vec3 D = geometry[tetraedras[tet][3]];
+			vec3 min(1E10, 1E10, 1E10), max(-1E10, -1E10, -1E10);
+			FOR(cv, 4) FOR(d, 3) {
+				if (geometry[tetraedras[tet][cv]][d] > max[d]) max[d] = geometry[tetraedras[tet][cv]][d];
+				if (geometry[tetraedras[tet][cv]][d] < min[d]) min[d] = geometry[tetraedras[tet][cv]][d];
+			}
+			std::array<double, 4> l;
+			for (int X = int(std::floor(min[0])); X <= std::ceil(max[0]); X++)
+				for (int Y = int(std::floor(min[1])); Y <= std::ceil(max[1]); Y++)
+					for (int Z = int(std::floor(min[2])); Z <= std::ceil(max[2]); Z++)
+						if (intersections::point_is_in_tet(A, B, C, D, vec3(X, Y, Z), l)) {
+							Vert_is_in[X - start_in_X][Y - start_in_Y][Z - start_in_Z] = true;
+						}
+		}
+		
+	}
+	static void extracting_bnd_voxel_intersection(const std::vector<vec3>& geometry, const std::vector<std::array<int, 3>>& tris, std::vector<std::vector<std::vector<std::array<vec3, 3>>>>& Bnd_intersection,
+		int start_in_X, int start_in_Y, int start_in_Z, int nb_in_X, int nb_in_Y, int nb_in_Z) {
+		std::cerr << "matching boundary" << std::endl;
 
+		for (int X = start_in_X; X < start_in_X + (int)nb_in_X; X++) {
+			for (int Y = start_in_Y; Y < start_in_Y + (int)nb_in_Y; Y++) {
+				for (int Z = start_in_Z; Z < start_in_Z + (int)nb_in_Z; Z++) {
+					Bnd_intersection[X - start_in_X][Y - start_in_Y][Z - start_in_Z][0] = vec3(X + 0.5, Y, Z);
+					Bnd_intersection[X - start_in_X][Y - start_in_Y][Z - start_in_Z][1] = vec3(X, Y + 0.5, Z);
+					Bnd_intersection[X - start_in_X][Y - start_in_Y][Z - start_in_Z][2] = vec3(X, Y, Z + 0.5);
+				}
+			}
+		}
+		FOR(tri, tris.size()) {
+			if (tri % 1000 == 0) std::cerr << "Matching boundary triangles with voxels :      " << tri << "  /   " << tris.size() << std::endl;
+			assert(tris[tri][0] < geometry.size());
+			assert(tris[tri][1] < geometry.size());
+			assert(tris[tri][2] < geometry.size());
+
+			vec3 A = geometry[tris[tri][0]];
+			vec3 B = geometry[tris[tri][1]];
+			vec3 C = geometry[tris[tri][2]];
+			vec3 min(1E10, 1E10, 1E10), max(-1E10, -1E10, -1E10);
+			FOR(tv, 3) FOR(d, 3) {
+				if (geometry[tris[tri][tv]][d] > max[d]) max[d] = geometry[tris[tri][tv]][d];
+				if (geometry[tris[tri][tv]][d] < min[d]) min[d] = geometry[tris[tri][tv]][d];
+			}
+			double l1 = 0, l2 = 0, l3 = 0;
+			for (int X = int(std::floor(min[0])); X <= std::ceil(max[0]); X++)
+				for (int Y = int(std::floor(min[1])); Y <= std::ceil(max[1]); Y++)
+					for (int Z = int(std::floor(min[2])); Z <= std::ceil(max[2]); Z++) {
+						vec3 Xi = vec3(X, Y, Z);
+						FOR(d, 3) {
+							vec3 Xj = Xi; Xj[d] += 1;
+							if (intersections::inter_sec_triangle(A, B, C, Xi, Xj, l1, l2, l3)) {
+								vec3 bndcut = l1 * A + l2 * B + l3 * C;
+								if ((bndcut - Xi).norm() < 0.1) bndcut = 0.9 * Xi + 0.1 * Xj;
+								if ((bndcut - Xj).norm() < 0.1) bndcut = 0.1 * Xi + 0.9 * Xj;
+								Bnd_intersection[X - start_in_X][Y - start_in_Y][Z - start_in_Z][d] = bndcut;
+							}
+
+						}
+					}
+
+		}
+
+	}
+
+
+
+	static void extracting_voxel_hardedge_wishes(const std::vector<vec3>& geometry, const std::vector<std::array<int, 2>>& edges, std::vector<std::vector<std::vector<std::array<vec3, 4>>>>& voxel_wishes,
+		int start_in_X, int start_in_Y, int start_in_Z, int nb_in_X, int nb_in_Y, int nb_in_Z) {
+		for (int X = start_in_X; X < start_in_X + (int)nb_in_X; X++) {
+			for (int Y = start_in_Y; Y < start_in_Y + (int)nb_in_Y; Y++) {
+				for (int Z = start_in_Z; Z < start_in_Z + (int)nb_in_Z; Z++) {
+					FOR(i, 4) voxel_wishes[X - start_in_X][Y - start_in_Y][Z - start_in_Z][i] = NO_WISH;
+				}
+			}
+		}
+		FOR(edge, edges.size()) FOR(ev, 2) assert(edges[edge][ev] < geometry.size());
+		std::vector<int> vertex_hd(geometry.size(), 0);
+		FOR(edge, edges.size()) FOR(ev, 2) vertex_hd[edges[edge][ev]]++;
+		FOR(v, geometry.size()) if (vertex_hd[v] > 2) {
+			voxel_wishes[(int)std::floor(geometry[v].x) - start_in_X][(int)std::floor(geometry[v].y) - start_in_Y][(int)std::floor(geometry[v].z) - start_in_Z][0] = geometry[v];
+		}
+		FOR(edge, edges.size()) {
+			if (edge % 1000 == 0) std::cerr << "Intersecting hardedges with voxels :      " << edge << "  /   " << edges.size() << std::endl;
+			
+			vec3 A = geometry[edges[edge][0]];
+			vec3 B = geometry[edges[edge][1]];
+			vec3 min(1E10, 1E10, 1E10), max(-1E10, -1E10, -1E10);
+			FOR(tv, 2) FOR(d, 3) {
+				if (geometry[edges[edge][tv]][d] > max[d]) max[d] = geometry[edges[edge][tv]][d];
+				if (geometry[edges[edge][tv]][d] < min[d]) min[d] = geometry[edges[edge][tv]][d];
+			}
+			std::vector<std::array<int, 3>> list_of_voxel_crossed;
+			double l1 = 0, l2 = 0, l3 = 0;
+			for (int X = int(std::floor(min[0])); X <= std::ceil(max[0]); X++)
+				for (int Y = int(std::floor(min[1])); Y <= std::ceil(max[1]); Y++)
+					for (int Z = int(std::floor(min[2])); Z <= std::ceil(max[2]); Z++) {
+						vec3 Xi = vec3(X, Y, Z);
+
+						FOR(dim, 3) {
+							vec3 d1; d1[(dim + 1) % 3] = 1;
+							vec3 d2; d2[(dim + 2) % 3] = 1;
+							vec3 inter;
+							if (intersections::inter_sec_quad(Xi, Xi + d1, Xi + d1 + d2, Xi + d2, A, B, inter)) {
+								voxel_wishes[X - start_in_X][Y - start_in_Y][Z - start_in_Z][dim + 1] = inter;
+							}
+						}
+
+					}
+
+		}
+
+	}
+	static void simplifying_vertices(std::vector<vec3>& mc_verts, std::vector<int>& mc_cells) {
+		//removing isolated verts
+		{
+			std::vector<bool> mark(mc_verts.size(), false);
+			FOR(hv, mc_cells.size())  mark[mc_cells[hv]] = true;
+			std::vector<vec3> new_verts;
+			std::vector<int> old2new(mc_verts.size());
+			int curr = 0;
+			FOR(v, mc_verts.size()) if (mark[v]) {
+				new_verts.push_back(mc_verts[v]);
+				old2new[v] = curr++;
+			}
+			mc_verts.clear();
+			mc_verts.assign(new_verts.begin(), new_verts.end());
+			FOR(hv, mc_cells.size())  mc_cells[hv] = old2new[mc_cells[hv]];
+
+		}
+
+		// colocating vertices 
+		{
+			std::vector<int> old2new;
+			colocate(mc_verts, old2new, 1E-6);
+			DisjointSet ds(mc_verts.size());
+			FOR(v, mc_verts.size()) ds.merge(v, old2new[v]);
+			int nb_group = ds.get_sets_id(old2new);
+			std::cerr << nb_group << std::endl;
+			std::cerr << mc_verts.size() << std::endl;
+
+			std::vector<vec3> new_verts(nb_group);
+			FOR(v, mc_verts.size()) new_verts[old2new[v]] = mc_verts[v];
+			mc_verts.clear();
+			mc_verts.assign(new_verts.begin(), new_verts.end());
+			FOR(hv, mc_cells.size())  mc_cells[hv] = old2new[mc_cells[hv]];
+		}
+	}
 
 
 	void hexify(const std::vector<vec3>& verts, const std::vector<int>& tets, std::vector<vec3>& out_verts, std::vector<int>& out_hexes) {
-		if (verts.empty()) return;
+		if (verts.empty() || tets.empty()) return;
 		std::vector<std::array<int, 4>> tetraedras(tets.size() / 4);
 		std::vector<vec3> geometry(verts.size());
 		FOR(v, geometry.size()) geometry[v] = verts[v];
@@ -428,34 +624,16 @@ namespace marchingcube {
 		int start_in_Z = (int)std::floor(bboxmin[2]);
 		std::vector<std::vector<std::vector<bool>>> Vert_is_in(nb_in_X, std::vector<std::vector<bool>>(nb_in_Y, std::vector<bool>(nb_in_Z, false)));
 		std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-		FOR(tet, tetraedras.size()) {
-			if (tet % 1000 == 0) std::cerr << "Extracting sources       :      " << tet << "  /   " << tetraedras.size() << std::endl;
-			vec3 A = geometry[tetraedras[tet][0]];
-			vec3 B = geometry[tetraedras[tet][1]];
-			vec3 C = geometry[tetraedras[tet][2]];
-			vec3 D = geometry[tetraedras[tet][3]];
-			vec3 min(1E10, 1E10, 1E10), max(-1E10, -1E10, -1E10);
-			FOR(cv, 4) FOR(d, 3) {
-				if (geometry[tetraedras[tet][cv]][d] > max[d]) max[d] = geometry[tetraedras[tet][cv]][d];
-				if (geometry[tetraedras[tet][cv]][d] < min[d]) min[d] = geometry[tetraedras[tet][cv]][d];
-			}
-			std::array<double, 4> l;
-			for (int i = int(std::floor(min[0])); i < std::ceil(max[0]); i++)
-				for (int j = int(std::floor(min[1])); j < std::ceil(max[1]); j++)
-					for (int k = int(std::floor(min[2])); k < std::ceil(max[2]); k++)
-						if (intersections::point_is_in_tet(A, B, C, D, vec3(i, j, k), l)) {
-							Vert_is_in[i - start_in_X][j - start_in_Y][k - start_in_Z] = true;
-						}
-		}
+		extract_nodes(geometry, tetraedras, Vert_is_in, start_in_X, start_in_Y, start_in_Z);
 		std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
 		std::cerr << "Source extraction: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() / 1000. << "sec." << std::endl;
 		std::vector<vec3> mc_verts;
 		std::vector<int> mc_cells;
 		begin = std::chrono::steady_clock::now();
-		for (int X = start_in_X; X < start_in_X + (int)nb_in_X - 1; X++) {
-			std::cerr << " Extracting cubes		 :		X = " << X << "    ->    " << start_in_X + (int)nb_in_X - 1 << std::endl;
-			for (int Y = start_in_Y; Y < start_in_Y + (int)nb_in_Y - 1; Y++) {
-				for (int Z = start_in_Z; Z < start_in_Z + (int)nb_in_Z - 1; Z++)
+		for (int X = start_in_X; X < start_in_X + nb_in_X - 1; X++) {
+			std::cerr << " Extracting cubes		 :		X = " << X << "    ->    " << start_in_X + nb_in_X - 1 << std::endl;
+			for (int Y = start_in_Y; Y < start_in_Y + nb_in_Y - 1; Y++) {
+				for (int Z = start_in_Z; Z < start_in_Z + nb_in_Z - 1; Z++)
 				{
 					std::array<bool, 8> corner_is_in;
 					std::array<vec3, 8> corners;
@@ -500,44 +678,125 @@ namespace marchingcube {
 		std::cerr << "Hexaedra extraction: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() / 1000. << "sec." << std::endl;
 		std::cerr << "Simplifying unecessary vertices" << std::endl;
 		begin = std::chrono::steady_clock::now();
-		//removing isolated verts
-		{
-			std::vector<bool> mark(mc_verts.size(), false);
-			FOR(hv, mc_cells.size())  mark[mc_cells[hv]] = true;
-			std::vector<vec3> new_verts;
-			std::vector<int> old2new(mc_verts.size());
-			int curr = 0;
-			FOR(v, mc_verts.size()) if (mark[v]) {
-				new_verts.push_back(mc_verts[v]);
-				old2new[v] = curr++;
-			}
-			mc_verts.clear();
-			mc_verts.assign(new_verts.begin(), new_verts.end());
-			FOR(hv, mc_cells.size())  mc_cells[hv] = old2new[mc_cells[hv]];
-
-		}
-
-		// colocating vertices 
-		{
-			std::vector<int> old2new;
-			colocate(mc_verts, old2new, 1E-6);
-			DisjointSet ds(mc_verts.size());
-			FOR(v, mc_verts.size()) ds.merge(v, old2new[v]);
-			int nb_group = ds.get_sets_id(old2new);
-			std::cerr << nb_group << std::endl;
-			std::cerr << mc_verts.size() << std::endl;
-
-			std::vector<vec3> new_verts(nb_group);
-			FOR(v, mc_verts.size()) new_verts[old2new[v]] = mc_verts[v];
-			mc_verts.clear();
-			mc_verts.assign(new_verts.begin(), new_verts.end());
-			FOR(hv, mc_cells.size())  mc_cells[hv] = old2new[mc_cells[hv]];
-		}
-
+		simplifying_vertices(mc_verts, mc_cells);
 		end = std::chrono::steady_clock::now();
 		std::cerr << "Colocating and vertex simplification: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() / 1000. << " sec." << std::endl;
 		out_verts.assign(mc_verts.begin(), mc_verts.end());
 		out_hexes.assign(mc_cells.begin(), mc_cells.end());
 	}
+
+
+
+
+	void hexify_with_bnd(const std::vector<UM::vec3>& verts, const std::vector<int>& tets, const std::vector<int> bnd_tri, const std::vector<int> hard_edge, std::vector<vec3>& out_verts, std::vector<int>& out_hexes){
+		if (verts.empty() || tets.empty()) return;
+		std::vector<std::array<int, 4>> tetraedras(tets.size() / 4);
+		std::vector<std::array<int, 3>> tris(bnd_tri.size() / 3);
+		std::vector<std::array<int, 2>> edges(hard_edge.size() / 2);
+		std::vector<vec3> geometry(verts.size());
+		FOR(v, geometry.size()) geometry[v] = verts[v];
+		FOR(f, tetraedras.size()) FOR(fv, 4) tetraedras[f][fv] = tets[4 * f + fv];
+		FOR(t, tris.size()) FOR(tv, 3) tris[t][tv] = bnd_tri[3 * t + tv];
+		FOR(e, edges.size()) FOR(ev, 2) edges[e][ev] = hard_edge[2 * e + ev];
+
+
+		vec3 bboxmax = geometry[0];
+		vec3 bboxmin = geometry[0];
+
+		FOR(v, geometry.size()) FOR(dim, 3) {
+			if (bboxmax[dim] < geometry[v][dim]) bboxmax[dim] = geometry[v][dim];
+			if (bboxmin[dim] > geometry[v][dim]) bboxmin[dim] = geometry[v][dim];
+		}
+		std::cerr << " bboxmax  : " << bboxmax << std::endl;
+		std::cerr << " bboxmin  : " << bboxmin << std::endl;
+		int nb_in_X = (int)std::ceil(bboxmax[0] - bboxmin[0]) + 2;
+		int nb_in_Y = (int)std::ceil(bboxmax[1] - bboxmin[1]) + 2;
+		int nb_in_Z = (int)std::ceil(bboxmax[2] - bboxmin[2]) + 2;
+		int start_in_X = (int)std::floor(bboxmin[0]);
+		int start_in_Y = (int)std::floor(bboxmin[1]);
+		int start_in_Z = (int)std::floor(bboxmin[2]);
+		std::cerr << " start_in_X  : " << start_in_X << std::endl;
+		std::cerr << " start_in_Y  : " << start_in_Y << std::endl;
+		std::cerr << " start_in_Z  : " << start_in_Z << std::endl;
+		std::cerr << " nb_in_X  : " << nb_in_X << std::endl;
+		std::cerr << " nb_in_Y  : " << nb_in_Y << std::endl;
+		std::cerr << " nb_in_Z  : " << nb_in_Z << std::endl;
+
+		std::vector<std::vector<std::vector<bool>>> Vert_is_in(nb_in_X, std::vector<std::vector<bool>>(nb_in_Y, std::vector<bool>(nb_in_Z, false)));
+		std::vector<std::vector<std::vector<std::array<vec3, 3>>>> Bnd_intersection(nb_in_X, std::vector<std::vector<std::array<vec3, 3>>>(nb_in_Y, std::vector<std::array<vec3, 3>>(nb_in_Z)));
+		std::vector<std::vector<std::vector<std::array<vec3, 4>>>> voxel_wishes(nb_in_X, std::vector<std::vector<std::array<vec3, 4>>>(nb_in_Y, std::vector<std::array<vec3, 4>>(nb_in_Z)));
+
+		std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+		extract_nodes(geometry, tetraedras, Vert_is_in, start_in_X, start_in_Y, start_in_Z);
+		extracting_bnd_voxel_intersection(geometry, tris, Bnd_intersection, start_in_X, start_in_Y, start_in_Z, nb_in_X, nb_in_Y, nb_in_Z);
+		extracting_voxel_hardedge_wishes(geometry, edges, voxel_wishes, start_in_X, start_in_Y, start_in_Z, nb_in_X, nb_in_Y, nb_in_Z);
+		std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+		std::cerr << "Data extraction: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() / 1000. << "sec." << std::endl;
+		
+		std::vector<vec3> mc_verts;
+		std::vector<int> mc_cells;
+		begin = std::chrono::steady_clock::now();
+		for (int X = start_in_X; X < start_in_X + nb_in_X - 1; X++) {
+			std::cerr << " Extracting cubes		 :		X = " << X << "    ->    " << start_in_X + nb_in_X - 1 << std::endl;
+			for (int Y = start_in_Y; Y < start_in_Y + nb_in_Y - 1; Y++) {
+				for (int Z = start_in_Z; Z < start_in_Z + nb_in_Z - 1; Z++)
+				{
+					std::array<bool, 8> corner_is_in;
+					std::array<vec3, 8> corners;
+					std::array<vec3, 24> corner_bnd_alternative;
+					bool one_is_in = false;
+					FOR(k, 2) FOR(j, 2) FOR(i, 2) {
+						corner_is_in[4 * k + 2 * j + i] = Vert_is_in[X + i - start_in_X][Y + j - start_in_Y][Z + k - start_in_Z];
+						one_is_in = one_is_in || corner_is_in[4 * k + 2 * j + i];
+					}
+					if (!one_is_in) continue;
+					FOR(k, 2) FOR(j, 2) FOR(i, 2) {
+						corners[4 * k + 2 * j + i] = vec3((double)X + (double)i, (double)Y + (double)j, (double)Z + (double)k);
+					}
+					FOR(k, 2) FOR(j, 2) FOR(i, 2) FOR(dim, 3) {
+						int ip[3] = { i,j,k };
+						if (ip[dim] == 1) ip[dim] = 0;
+						corner_bnd_alternative[3 * (4 * k + 2 * j + i) + dim] = Bnd_intersection[X + ip[0] - start_in_X][Y + ip[1] - start_in_Y][Z + ip[2] - start_in_Z][dim];
+					}
+
+					std::array<vec3, 7> center_and_facet_wishes = { NO_WISH };
+					center_and_facet_wishes[0] = voxel_wishes[X - start_in_X][Y - start_in_Y][Z - start_in_Z][0];
+					center_and_facet_wishes[1] = voxel_wishes[X - start_in_X][Y - start_in_Y][Z - start_in_Z][1];
+					center_and_facet_wishes[3] = voxel_wishes[X - start_in_X][Y - start_in_Y][Z - start_in_Z][2];
+					center_and_facet_wishes[5] = voxel_wishes[X - start_in_X][Y - start_in_Y][Z - start_in_Z][3];
+					center_and_facet_wishes[2] = voxel_wishes[X + 1 - start_in_X][Y - start_in_Y][Z - start_in_Z][1];
+					center_and_facet_wishes[4] = voxel_wishes[X - start_in_X][Y + 1 - start_in_Y][Z - start_in_Z][2];
+					center_and_facet_wishes[6] = voxel_wishes[X - start_in_X][Y - start_in_Y][Z + 1 - start_in_Z][3];
+
+					std::array<int, 24> he_array;
+					extract_polyedra_dual(corner_is_in, he_array);
+					Polyedra polyedra;
+					extract_polyedra(he_array, corner_is_in, corners, corner_bnd_alternative, polyedra);
+					Triangulated_Polyedra polyedra_convex_hull;
+					compute_polyedra_convex_hull(polyedra, polyedra_convex_hull);
+					Hexadreized_Polyedra hexes;
+					extract_hexes_from_polyedra(polyedra_convex_hull, polyedra, hexes, center_and_facet_wishes);
+
+					int vert_init_size = (int)mc_verts.size();
+					mc_verts.resize(vert_init_size + hexes.verts_.size());
+					FOR(v, hexes.verts_.size()) mc_verts[vert_init_size + v] = hexes.verts_[v];
+					int hex_init_size = (int)mc_cells.size();
+					mc_cells.resize(hex_init_size + 8 * hexes.hexaedra_.size());
+					FOR(h, hexes.hexaedra_.size()) FOR(i, 8) mc_cells[hex_init_size + 8 * h + i] = vert_init_size + hexes.hexaedra_[h][i];
+				}
+			}
+		}
+		end = std::chrono::steady_clock::now();
+		std::cerr << "Hexaedra extraction: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() / 1000. << "sec." << std::endl;
+		std::cerr << "Simplifying unecessary vertices" << std::endl;
+		begin = std::chrono::steady_clock::now();
+		simplifying_vertices(mc_verts, mc_cells);
+		end = std::chrono::steady_clock::now();
+		std::cerr << "Colocating and vertex simplification: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() / 1000. << " sec." << std::endl;
+		out_verts.assign(mc_verts.begin(), mc_verts.end());
+		out_hexes.assign(mc_cells.begin(), mc_cells.end());
+		
+	}
+
 }
 

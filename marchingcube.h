@@ -7,11 +7,13 @@ namespace marchingcube {
 
 	void hexify(const std::vector<UM::vec3>& verts, const std::vector<int>& tets, std::vector<UM::vec3>& mc_verts, std::vector<int>& mc_hexes);
 
-	// moved output in argument to decrease allocation
+	void hexify_with_bnd(const std::vector<UM::vec3>& verts, const std::vector<int>& tets, const std::vector<int> bnd_tris, const std::vector<int> hard_edges, std::vector<UM::vec3>& mc_verts, std::vector<int>& mc_hexes);
+
 	void extract_polyedra_dual(const std::array<bool, 8>& corner_is_in, std::array<int, 24>& he_array);
 	struct Polyedra {
 		std::vector<std::vector<int>> facets_;
 		std::vector<UM::vec3> verts_;
+		std::vector<int> vertex_id_;
 	};
 	struct Triangulated_Polyedra {
 		std::vector<std::array<int, 3>> triangles_;
@@ -19,7 +21,7 @@ namespace marchingcube {
 		std::vector<std::array<int, 3>> triangles_adjacent_;
 		std::vector<int> triangles_original_facets_;
 	};
-	// Warning: the numbering convention is of Geogram. Its det has an opposite sign of vtk, hexalab.net and GMSH. See "write_medit_format" in main.cpp to handle conversion.
+	// Warning: the numbering convention is of Geogram. Its det has an opposite sign of vtk, hexalab.net and GMSH. See "medit.h" in ultimaille to handle conversion.
 	struct Hexadreized_Polyedra {
 		std::vector<std::array<int, 8>> hexaedra_;
 		std::vector<UM::vec3> verts_;
@@ -30,6 +32,7 @@ namespace marchingcube {
 
 	UM::vec3 center_of_polyedra_facet_with_flattening(const Triangulated_Polyedra& TP, const int facet);
 
-	void extract_hexes_from_polyedra(const Triangulated_Polyedra& TPol, const Polyedra& P, Hexadreized_Polyedra& HP);
+	static const UM::vec3 NO_WISH(1E10, 1E10, 1E10);
+	void extract_hexes_from_polyedra(const Triangulated_Polyedra& TPol, const Polyedra& P, Hexadreized_Polyedra& hexes, const std::array<UM::vec3, 7>& wishes = { NO_WISH });
 
 }

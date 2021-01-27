@@ -7,7 +7,7 @@ add_subdirectory(ultimaille)
 include_directories(ultimaille ultimaille/ext)
 
 
-add_executable(marchinghex main.cpp intersections.cpp marchingcube.cpp intersections.h marchingcube.h)
+add_executable(marchinghex main.cpp intersections.cpp marchingcube.cpp intersections.h marchingcube.h smoother.h smoother.cpp)
 target_link_libraries(marchinghex ultimaille)
 
 

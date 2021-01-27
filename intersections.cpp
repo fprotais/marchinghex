@@ -36,6 +36,50 @@ namespace intersections {
 
 		return l[0]>= 0 && l[1]>=0 && l[2]>=0;
 	}
+	// code from : https://stackoverflow.com/questions/42740765/intersection-between-line-and-triangle-in-3d
+	bool ray_trace_triangle(const vec3& A, const vec3& B, const vec3& C, const vec3& s1, const vec3& s2, double& l1, double& l2, double& l3) {
+		vec3 E1 = B - A;
+		vec3 E2 = C - A;
+		vec3 N = cross(E1, E2);
+		double det = -(s2 - s1) * N;
+		double invdet = 1.0 / det;
+		vec3 AO = s1 - A;
+		vec3 DAO = cross(AO, s2 - s1);
+		double u = E2 * DAO * invdet;
+		double v = -E1 * DAO * invdet;
+		double t = AO * N * invdet;
+		l1 = (1 - u - v);
+		l2 = u;
+		l3 = v;
+		return (det >= 1e-10 && t <= 1.0 && t >= 0.0 && u >= 0.0 && v >= 0.0 && (u + v) <= 1.0);
+	}
+	bool inter_sec_triangle(const vec3& A, const vec3& B, const vec3& C, const vec3& s1, const vec3& s2, double& l1, double& l2, double& l3) {
+		if (ray_trace_triangle(A, B, C, s1, s2, l1, l2, l3))
+			return true;
+		else if (ray_trace_triangle(A, B, C, s2, s1, l1, l2, l3))
+			return true;
+		else
+			return false;
+
+	}
+	bool inter_sec_quad(const vec3& A, const vec3& B, const vec3& C, const vec3& D, const vec3& s1, const vec3& s2, vec3& inter) {
+		double l1, l2, l3;
+		if (inter_sec_triangle(A, B, C, s1, s2, l1, l2, l3)) {
+			inter = l1 * A + l2 * B + l3 * C;
+			return true;
+		} 
+		if (inter_sec_triangle(C, D, A, s1, s2, l1, l2, l3)) {
+			inter = l1 * C + l2 * D + l3 * A;
+			return true;
+		}
+		return false;
+	}
+
+	bool point_is_cube(const vec3& O, const vec3& dO, const vec3& p) {
+		FOR(dim, 3) if (p[dim]< O[dim] || p[dim]>O[dim] + dO[dim]) return false;
+		return true;
+	}
+
 
 }
 

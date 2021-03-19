@@ -1,6 +1,6 @@
 #pragma once
 #include <array>
-#include <ultimaille/geometry.h>
+#include <ultimaille/vec.h>
 
 namespace intersections {
 	bool point_is_in_tet(const UM::vec3& A, const UM::vec3& B, const UM::vec3& C, const UM::vec3& D, const UM::vec3& P, std::array<double, 4>& l, const double dillatation = 1E-8);

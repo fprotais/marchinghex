@@ -2,8 +2,7 @@
 #include "intersections.h"
 #include <map>
 #include <chrono>
-#include <ultimaille/disjointset.h>
-#include <ultimaille/colocate.h>
+
 
 #define FOR(i, n) for(int i = 0; i < n; i++)
 static constexpr int NOT_AN_ID = -1;

@@ -1,8 +1,7 @@
 #include <iostream>
 #include <cstdlib>
-#include <ultimaille/io/fromsuffix.h>
+#include <ultimaille/all.h>
 
-#include <ultimaille/geometry.h>
 
 #include <chrono>
 #include <string>
@@ -13,7 +12,6 @@
 #include <sstream>
 
 #include "marchingcube.h"
-#include "smoother.h"
 using namespace UM;
 #define FOR(i, n) for(int i = 0; i < n; i++)
 
@@ -28,16 +26,14 @@ void reading_with_ultimaille(const std::string& filename, std::vector<vec3>& ver
     Tetrahedra m;
     Triangles bnd;
     PolyLine hd;
-    VolumeAttributes tmp = read_fromsuffix(filename, m);
-    SurfaceAttributes tmp1 = read_fromsuffix(filename, bnd);
-    PolyLineAttributes tmp2 = read_fromsuffix(filename, hd);
+    VolumeAttributes tmp = read_by_extension(filename, m);
+    SurfaceAttributes tmp1 = read_by_extension(filename, bnd);
+    PolyLineAttributes tmp2 = read_by_extension(filename, hd);
 
-    write_fromsuffix("input.mesh", m);
-    write_fromsuffix("boundary.mesh", bnd);
-    write_fromsuffix("hardedges.mesh", hd);
-    write_fromsuffix("input.vtk", m);
-    write_fromsuffix("boundary.vtk", bnd);
-    write_fromsuffix("hardedges.vtk", hd);
+    write_by_extension("input.mesh", m, VolumeAttributes{});
+    write_by_extension("boundary.mesh", bnd, SurfaceAttributes{});
+    write_by_extension("hardedges.mesh", hd, PolyLineAttributes{});
+
     verts.resize(m.nverts());
     FOR(v, m.nverts()) verts[v] = m.points[v];
     tets.resize(4 * m.ncells());
@@ -99,10 +95,7 @@ int main(int argc, char** argv) {
     begin = std::chrono::steady_clock::now();
     Hexahedra m;
     get_ultimaille_mesh(mc_verts, mc_hexes, m);
-    write_fromsuffix(outfile, m);
-
-    elliptic_smoother(m);
-    write_fromsuffix("smoothed.mesh", m);
+    write_by_extension(outfile, m, VolumeAttributes{});
 
     end = std::chrono::steady_clock::now();
     std::cerr << "File writen: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() / 1000. << "sec." << std::endl;

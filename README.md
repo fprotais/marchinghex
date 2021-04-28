@@ -4,7 +4,7 @@ The code take as an input ***a grid*** (as an hex mesh) and ***a domain***  (as 
 To match with the boundary, the code reads triangles and edges from the domain mesh. 
 
 Starting from a regular grid, elements are guaranteed to have positive scaled-jacobian. 
-To match the boundary, we slowly move points, making sure not elements are inverted. 
+To match the boundary, we slowly move points, making sure no elements are inverted. 
 **Starting from a regular grid, we are guaranteed to obtain an hexahedral mesh free of inverted elements (with scaled-jacobian \> 0)**. 
 
 The smoothing is done using an elliptic energy, and is currently quite slow (5000 nodes/s). I am working to improve this.
@@ -72,14 +72,14 @@ Elements produced are of good quality:
 ![box](https://raw.githubusercontent.com/fprotais/marchinghex/main/images/bimaterial_sj.jpg)
 
 
-# Quality of hexaedra
+# Quality of hexahedra
 
-We use a method which generate polyhedra for each cube of the grid, and then obtain hexahedra through midpoint splitting. 
+We use a method which generates polyhedra for each cube of the grid, and then obtains hexahedra through midpoint splitting. 
 "different_configurations.mesh" contains all the configuration generated with our method:
 ![box](https://raw.githubusercontent.com/fprotais/marchinghex/main/images/configurations.png)
 
 You can notice that some elements have negative scaled-jacobian. 
-To avoid those, \[1\] propose a clever splitting, that gives "splitted_configurations.mesh" and "splitted_configurations_compl.mesh", each configuration and its complementary:
+To avoid those, \[1\] proposes a clever splitting, that gives "splitted_configurations.mesh" and "splitted_configurations_compl.mesh", each configuration and its complementary:
 ![box](https://raw.githubusercontent.com/fprotais/marchinghex/main/images/with_split.jpg)
 To generate those results: 
 ```sh

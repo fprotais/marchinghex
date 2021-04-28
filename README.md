@@ -87,7 +87,7 @@ To generate those results:
 ```sh
 ./make_examples
 ```
-*the complete mesh, and subdirectories containing all differents configurations in individual meshes*
+*Generates the complete mesh, and subdirectories containing all differents configurations in individual meshes*
 
 
 

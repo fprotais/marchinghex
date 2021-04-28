@@ -9,12 +9,12 @@ To match the boundary, we slowly move points, making sure no elements are invert
 
 The smoothing is done using an elliptic energy, and is currently quite slow (5000 nodes/s). I am working to improve this.
 
-The code rely on lib ultimaille and uses its io. Supported mesh files are geogram, medit and vtk. 
+The code rely on lib ultimaille and uses its io. Supported mesh files are *geogram*, *medit* and *vtk*. 
 You can display hexahedral mesh quality using [hexalab.net](https://www.hexalab.net/). 
 For generating and visualising meshes in general, I recommand [gmsh](http://gmsh.info/) or [Graphite](http://alice.loria.fr/index.php?option=com_content&view=article&id=22).
 
 
-\[1\] Dhondt, G. (2001). A new automatic hexahedral mesher based on cutting. International Journal for Numerical Methods in Engineering, 50(9), 2109-2126.
+\[1\] Dhondt, G. (2001). *A new automatic hexahedral mesher based on cutting.* International Journal for Numerical Methods in Engineering, 50(9), 2109-2126.
 
 # Use CMake to build the project:
 ```sh
@@ -39,7 +39,7 @@ A scale change the coarsness of the grid (5 : very fine, 0.1: very coarse).
 ![box](https://raw.githubusercontent.com/fprotais/marchinghex/main/images/mesh_in_grid.jpg)
 
 /!\ Note that for hexmeshing to work the best, each point of grid should ***absolutly not*** be on the boundary of the domain. 
-The given grid generator is very trivial, and doesn't account for this. 
+The given grid generator is trivial, and doesn't account for this. 
 
 # Hex meshing
 
@@ -87,7 +87,7 @@ To generate those results:
 ```sh
 ./make_examples
 ```
-(the complete mesh, and subdirectories containing all differents configurations in individual meshes)
+*the complete mesh, and subdirectories containing all differents configurations in individual meshes*
 
 
 

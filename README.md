@@ -58,7 +58,7 @@ To generate this result:
 ./marchinghex_hexmeshing grid.mesh ../meshes/CAD0.mesh hexmesh.mesh
 ```
 
-# Bi material meshing
+# Bi-material meshing
 
 The pattern used allows for bimaterial meshing, with inside and outside mesh being compatible. 
 ![box](https://raw.githubusercontent.com/fprotais/marchinghex/main/images/bimaterial.jpg)
@@ -81,11 +81,11 @@ We use a method which generate polyhedra for each cube of the grid, and then obt
 You can notice that some elements have negative scaled-jacobian. 
 To avoid those, \[1\] propose a clever splitting, that gives "splitted_configurations.mesh" and "splitted_configurations_compl.mesh", each configuration and its complementary:
 ![box](https://raw.githubusercontent.com/fprotais/marchinghex/main/images/with_split.jpg)
-To generate those results: (the complete mesh, and subdirectories containing all differents configurations in individual meshes)
+To generate those results: 
 ```sh
 ./make_examples
 ```
-
+(the complete mesh, and subdirectories containing all differents configurations in individual meshes)
 
 
 

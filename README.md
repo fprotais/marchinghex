@@ -38,6 +38,8 @@ A scale change the coarsness of the grid (5 : very fine, 0.1: very coarse).
 ```
 ![box](https://raw.githubusercontent.com/fprotais/marchinghex/main/images/mesh_in_grid.jpg)
 
+/!\ Note that for hexmeshing to work the best, each point of grid should ***absolutly not*** be on the boundary of the domain. 
+The given grid generator is very trivial, and doesn't account for this. 
 
 # Hex meshing
 

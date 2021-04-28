@@ -76,7 +76,7 @@ int main(int argc, char** argv) {
                 grid.vert(Z * ((nb_in_X - 1) * (nb_in_Y - 1)) + Y * (nb_in_X - 1) + X, 4 * Zp + 2 * Yp + Xp) = (Z + Zp) * (nb_in_X * nb_in_Y) + (Y + Yp) * nb_in_X + X + Xp;
 
 
-    FOR(v, grid.nverts()) FOR(d, 3) grid.points[v][d] = grid.points[v][d] + 0.271;
+    FOR(v, grid.nverts()) FOR(d, 3) grid.points[v][d] = grid.points[v][d] + 0.5;
     FOR(v, grid.nverts()) grid.points[v] = grid.points[v] / scale;
 
     write_by_extension(gridname, grid);

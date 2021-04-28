@@ -92,6 +92,7 @@ int main(int argc, char** argv) {
 
     std::cerr << "Beguinning smoothing of the result. It is an iterative process, you can stop it when it is not saving." << std::endl;
     std::cerr << "The smoothing time is linear to the side of the hexmesh (5000 nodes/sec for each iteration on my computer). Speeding it up is a work in progress." << std::endl;
+    write_by_extension("mh_result.mesh", hex);
 
     begin = std::chrono::steady_clock::now();
     iterative_smoother smoother(hex);
@@ -99,20 +100,19 @@ int main(int argc, char** argv) {
     smoother.set_features_segment(features);
     boundary_matcher matcher(boundary, features);
     double grid_size_edge = 0;
-    FOR(h, domain.ncells()) FOR(hf, 6) FOR(hfv, 4)
-        grid_size_edge += (domain.points[domain.facet_vert(h, hf, hfv)] - domain.points[domain.facet_vert(h, hf, (hfv + 1) % 3)]).norm();
-    grid_size_edge /= domain.ncells() * 24;
+    FOR(h, grid.ncells()) FOR(hf, 6) FOR(hfv, 4)
+        grid_size_edge = std::max(grid_size_edge,(grid.points[grid.facet_vert(h, hf, hfv)] - grid.points[grid.facet_vert(h, hf, (hfv + 1) % 3)]).norm());
 
     FOR(i, hex.nverts()) {
         if (vert_type[i] == Marchinghex::VERT_IS_INSIDE) continue;
         if (vert_type[i] == Marchinghex::VERT_IS_ON_BOUNDARY) {
             std::vector<int> tri;
-            matcher.get_vert_close_triangles(wish[i], tri, grid_size_edge);
+            matcher.get_vert_close_triangles(wish[i], tri, 8*grid_size_edge);
             smoother.set_vertex_triangles(i, tri);
         }
         if (vert_type[i] == Marchinghex::VERT_IS_ON_FEATURE) {
             std::vector<int> seg;
-            matcher.get_vert_close_segments(wish[i], seg, grid_size_edge);
+            matcher.get_vert_close_segments(wish[i], seg, 2*grid_size_edge);
             smoother.set_vertex_segments(i, seg);
         }
         if (vert_type[i] == Marchinghex::VERT_IS_FEATURE_POINT) {
@@ -127,6 +127,7 @@ int main(int argc, char** argv) {
         smoother.scale_back();
         std::cerr << "Saving, do not quit...";
         write_by_extension(hexmeshname, hex);
+        write_by_extension("iter_"+std::to_string(i)+".mesh", hex);
         std::cerr << "Done." << std::endl;
         smoother.scale_up();
         end = std::chrono::steady_clock::now();

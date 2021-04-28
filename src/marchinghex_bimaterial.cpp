@@ -100,6 +100,8 @@ int main(int argc, char** argv) {
     write_by_extension(hexmeshname, hex, VolumeAttributes{ {}, {{"in", att_in.ptr}}, {}, {} });
     write_by_extension(insidename, hexin);
     write_by_extension(outsidename, hexout);
+    write_by_extension("mh_result.geogram", hex, VolumeAttributes{ {}, {{"in", att_in.ptr}}, {}, {} });
+
     std::cerr << "Grid has: " << grid.nverts() << " verts and " << grid.ncells() << " hexahedra." << std::endl;
     std::cerr << "Hexmesh has: " << hex.nverts() << " verts and " << hex.ncells() << " hexahedra." << std::endl;
     std::cerr << "Inside has: " << hexin.nverts() << " verts and " << hexin.ncells() << " hexahedra." << std::endl;
@@ -114,20 +116,19 @@ int main(int argc, char** argv) {
     smoother.set_features_segment(features);
     boundary_matcher matcher(boundary, features);
     double grid_size_edge = 0;
-    FOR(h, domain.ncells()) FOR(hf, 6) FOR(hfv, 4)
-        grid_size_edge += (domain.points[domain.facet_vert(h, hf, hfv)] - domain.points[domain.facet_vert(h, hf, (hfv + 1) % 3)]).norm();
-    grid_size_edge /= domain.ncells() * 24;
+    FOR(h, grid.ncells()) FOR(hf, 6) FOR(hfv, 4)
+        grid_size_edge = std::max(grid_size_edge, (grid.points[grid.facet_vert(h, hf, hfv)] - grid.points[grid.facet_vert(h, hf, (hfv + 1) % 3)]).norm());
 
     FOR(i, hex.nverts()) {
         if (vert_type[i] == Marchinghex::VERT_IS_INSIDE) continue;
         if (vert_type[i] == Marchinghex::VERT_IS_ON_BOUNDARY) {
             std::vector<int> tri;
-            matcher.get_vert_close_triangles(wish[i], tri, grid_size_edge);
+            matcher.get_vert_close_triangles(wish[i], tri, 8 * grid_size_edge);
             smoother.set_vertex_triangles(i, tri);
         }
         if (vert_type[i] == Marchinghex::VERT_IS_ON_FEATURE) {
             std::vector<int> seg;
-            matcher.get_vert_close_segments(wish[i], seg, grid_size_edge);
+            matcher.get_vert_close_segments(wish[i], seg, 2 * grid_size_edge);
             smoother.set_vertex_segments(i, seg);
         }
         if (vert_type[i] == Marchinghex::VERT_IS_FEATURE_POINT) {
@@ -143,6 +144,7 @@ int main(int argc, char** argv) {
         split(hex, is_in, hexin, hexout);
         std::cerr << "Saving, do not quit...";
         write_by_extension(hexmeshname, hex, VolumeAttributes{ {}, {{"in", att_in.ptr}}, {}, {} });
+        write_by_extension("iter_" + std::to_string(i) + ".geogram", hex, VolumeAttributes{ {}, {{"in", att_in.ptr}}, {}, {} });
         write_by_extension(insidename, hexin);
         write_by_extension(outsidename, hexout);
         std::cerr << "Done." << std::endl;

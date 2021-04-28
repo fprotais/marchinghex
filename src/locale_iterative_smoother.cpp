@@ -271,7 +271,7 @@ vec3 iterative_smoother::place_on_bnd(const int i, const vec3& v) {
 	//std::cerr << dir << std::endl;
 	//std::cerr << close_point << std::endl;
 	//std::cerr << v << std::endl;
-	double Tau[] = { 1, 0.75, 0.5, 0.25, 0.1 };
+	double Tau[] = { 1, 0.75, 0.5, 0.25, 0.1, 0.05, 0.01 };
 	for (double& tau : Tau) {
 		double minDet;
 		double E = evaluate_vert_energy(i, v + tau * dir, minDet);

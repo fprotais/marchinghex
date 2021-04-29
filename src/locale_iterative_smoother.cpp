@@ -73,6 +73,7 @@ iterative_smoother::iterative_smoother(Hexahedra& m)
 	, vert_bnd_projection_segments_(m_.nverts())
 	, vert_bnd_projection_point_(m_.nverts())
 	, vert_type_(m_.nverts(), 0)
+	, order_(m_.nverts(), 0)
 {
 	init_coefs(hexrefcoef_);
 
@@ -86,7 +87,7 @@ iterative_smoother::iterative_smoother(Hexahedra& m)
 		scale_ += (m.points[m.facet_vert(c, cf, cfv)] - m.points[m.facet_vert(c, cf, (cfv + 1) % 4)]).norm();
 	scale_ /= m.ncells() * 24;
 	for (int v : range(m_.nverts())) m.points[v] /= scale_;
-
+	for (int v : range(m_.nverts())) order_[v] = v;
 }
 
 
@@ -268,20 +269,16 @@ vec3 iterative_smoother::place_on_bnd(const int i, const vec3& v) {
 	}
 
 	vec3 dir = close_point - v;
-	//std::cerr << dir << std::endl;
-	//std::cerr << close_point << std::endl;
-	//std::cerr << v << std::endl;
+
 	double Tau[] = { 1, 0.75, 0.5, 0.25, 0.1, 0.05, 0.01 };
 	for (double& tau : Tau) {
 		double minDet;
 		double E = evaluate_vert_energy(i, v + tau * dir, minDet);
 		if (minDet > min_det_project_) {
-			//std::cerr << tau << std::endl;
 			vert_min_det_[i] = minDet;
 			return v + tau * dir;
 		}
 	}
-	//std::cerr << 0 << std::endl;
 
 	return v;
 
@@ -297,8 +294,22 @@ void iterative_smoother::update_eps(const int i, const double prev_E, const doub
 
 }
 
+void iterative_smoother::update_order() {
+	order_;
+	int cnt = 0;
+	for (int t = 3; t >= 0; t--) {
+		for (int i = 0; i < m_.nverts(); i++) {
+			if (vert_type_[i] == t) order_[i] = cnt++;
+		}
+	}
+}
+
+
+
 void iterative_smoother::run_iter() {
-	for (int i = 0; i < m_.nverts(); i++) if (!lock_[i]) {
+	update_order();
+	for (int ip = 0; ip < m_.nverts(); ip++) if (!lock_[order_[ip]]) {
+		int i = order_[ip];
 		vec3 grad;
 		mat3x3 hess;
 		double actual_E = compute_vert_grad_hess(i, grad, hess);
@@ -314,5 +325,7 @@ void iterative_smoother::run_iter() {
 	for (int i = 0; i < m_.nverts(); i++) if (!lock_[i]) if (glob_min > vert_min_det_[i]) glob_min = vert_min_det_[i];
 	std::cerr << "Min det is: " << glob_min << std::endl;
 }
+
+
 
 

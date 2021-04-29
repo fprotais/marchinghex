@@ -71,6 +71,8 @@ private:
 	UM::vec3 place_on_bnd(const int i, const UM::vec3& v);
 
 	void update_eps(const int i, const double prev_E, const double new_E);
+	void update_order();
+	std::vector<int> order_;
 	std::vector<bool> lock_;
 	std::vector<double> vert_eps_;
 	std::vector<double> vert_min_det_;
@@ -84,3 +86,6 @@ private:
 
 
 };
+
+
+

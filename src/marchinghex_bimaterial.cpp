@@ -39,6 +39,33 @@ inline void split(const Hexahedra& hex, std::vector<bool>& is_in, Hexahedra& hex
 
 
 
+// return number of unlocked vert
+int lock_far_from_bnd(const UM::Hexahedra& m, iterative_smoother& smoother, const std::vector<Marchinghex::VERT_TYPE>& vert_type, int dist = 5) {
+    std::vector<int> cell_dist(m.ncells(), 20000);
+    for (int c : range(m.ncells())) for (int cv : range(8)) {
+        if ((int)vert_type[m.vert(c,cv)] > 0) cell_dist[c] = 0;
+    }
+    VolumeConnectivity vec(m);
+    for (int i : range(dist)) {
+        for (int c : range(m.ncells())) if (cell_dist[c] == i) {
+            for (int cf : range(6)) if (vec.adjacent[6 * c + cf] != -1) {
+                int c2 = vec.adjacent[6 * c + cf] / 6;
+                if (cell_dist[c2] > i) cell_dist[c2] = i + 1;
+            }
+        }
+    }
+    std::vector<bool> locked(m.nverts(), false);
+    for (int c : range(m.ncells())) if (cell_dist[c] > dist) {
+        for (int cv : range(8)) locked[m.vert(c, cv)] = true;
+    }
+    smoother.set_locks(locked);
+    int cnt = 0;
+    for (int v : range(m.nverts())) if (!locked[v]) cnt++;
+    return cnt;
+}
+
+
+
 int main(int argc, char** argv) {
 
     if (argc < 3) {
@@ -112,6 +139,8 @@ int main(int argc, char** argv) {
 
     begin = std::chrono::steady_clock::now();
     iterative_smoother smoother(hex);
+    int nb_unlocked = lock_far_from_bnd(hex, smoother, vert_type);
+    std::cerr << "Number of vertices optimized: " << nb_unlocked << std::endl;
     smoother.set_bnd_triangles(boundary);
     smoother.set_features_segment(features);
     boundary_matcher matcher(boundary, features);

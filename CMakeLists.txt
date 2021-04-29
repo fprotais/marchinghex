@@ -19,19 +19,21 @@ if (WIN32)
 	set(BUILD_SHARED_LIBS OFF)
 endif()
 
-add_library(libmarchinghex src/intersections.cpp src/marchingcube.cpp src/projection.cpp src/locale_iterative_smoother.cpp src/intersections.h src/marchingcube.h src/projection.h src/locale_iterative_smoother.h)
+file(GLOB SOURCES lib/*.cpp lib/*.h )
+add_library(libmarchinghex ${SOURCES})
 target_link_libraries(libmarchinghex ultimaille)
+include_directories(lib)
 
-add_executable(marchinghex_bimaterial src/marchinghex_bimaterial.cpp)
+add_executable(marchinghex_bimaterial bin/marchinghex_bimaterial.cpp)
 target_link_libraries(marchinghex_bimaterial ultimaille libmarchinghex)
 
-add_executable(marchinghex_hexmeshing src/marchinghex_hexmeshing.cpp)
+add_executable(marchinghex_hexmeshing bin/marchinghex_hexmeshing.cpp)
 target_link_libraries(marchinghex_hexmeshing ultimaille libmarchinghex)
 
-add_executable(gridgenerator src/gridgenerator.cpp)
+add_executable(gridgenerator bin/gridgenerator.cpp)
 target_link_libraries(gridgenerator ultimaille libmarchinghex)
 
-add_executable(make_examples src/mhexample.cpp)
+add_executable(make_examples bin/mhexample.cpp)
 target_link_libraries(make_examples ultimaille libmarchinghex)
 
 

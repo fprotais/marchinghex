@@ -5,7 +5,15 @@ using namespace UM;
 
 
 
-
+void rotate_aroundX(PointSet & P, double angle) {
+    mat3x3 R = { vec3(1,0,0), vec3(0, std::cos(angle), -std::sin(angle)), vec3(0, std::sin(angle), std::cos(angle)) };
+    vec3 center;
+    FOR(v, P.size()) center += P[v];
+    center /= P.size();
+    FOR(v, P.size()) P[v] -= center;
+    FOR(v, P.size()) P[v] = R * P[v];
+    FOR(v, P.size()) P[v] += center;
+}
 
 int main(int argc, char** argv) {
 

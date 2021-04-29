@@ -5,7 +5,7 @@
 #include "marchingcube.h"
 
 #include "locale_iterative_smoother.h"
-
+#include "quality.h"
 using namespace UM;
 #define FOR(i, n) for(int i = 0; i < n; i++)
 
@@ -90,7 +90,6 @@ int main(int argc, char** argv) {
     Triangles boundary; read_by_extension(domainname, boundary);
     PolyLine features; read_by_extension(domainname, features);
 
-
     std::cerr << "Starting marchinghex pattern extraction." << std::endl;
     std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
@@ -110,9 +109,13 @@ int main(int argc, char** argv) {
 
 
     clean_outside(hex, is_in, vert_type, wish);
-    write_by_extension(hexmeshname, hex);
+    CellAttribute<double> hex_sj(hex);
+    double min_sj = compute_scaled_jacobian(hex, hex_sj);
+    write_by_extension(hexmeshname, hex, VolumeAttributes{ {},{{"sj", hex_sj.ptr}},{},{} });
+
     std::cerr << "Grid has: " << grid.nverts() << " verts and " << grid.ncells() << " hexahedra." << std::endl;
     std::cerr << "Hexmesh has: " << hex.nverts() << " verts and " << hex.ncells() << " hexahedra." << std::endl;
+    std::cerr << "Min Scaled jacobian: " << min_sj << std::endl;
     std::cerr << "Saving marchinghex result..." << std::endl;
 
     std::cerr << "Beguinning smoothing of the result. It is an iterative process, you can stop it when it is not saving." << std::endl;
@@ -152,8 +155,10 @@ int main(int argc, char** argv) {
         begin = std::chrono::steady_clock::now();
         smoother.run_iter();
         smoother.scale_back();
+        min_sj = compute_scaled_jacobian(hex, hex_sj);
+        std::cerr << "Min Scaled jacobian: " << min_sj << std::endl;
         std::cerr << "Saving, do not quit...";
-        write_by_extension(hexmeshname, hex);
+        write_by_extension(hexmeshname, hex, VolumeAttributes{ {},{{"sj", hex_sj.ptr}},{},{} });
         write_by_extension("iter_"+std::to_string(i)+".mesh", hex);
         std::cerr << "Done." << std::endl;
         smoother.scale_up();
@@ -161,7 +166,20 @@ int main(int argc, char** argv) {
         std::cerr << "Iter time : " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() / 1000. << "sec." << std::endl;
 
     }
+    smoother.scale_back();
 
     std::cerr << "FINISHED." << std::endl;
+    double dist = hausdorff_dist(hex, domain);
+    std::cerr << "Hausdorff dist: " << dist << std::endl;
+    if (domain.nverts() == 0) return 0;
+    vec3 min = domain.points[0], max = domain.points[0];
+    FOR(v, domain.nverts()) FOR(d, 3) {
+        min[d] = std::min(min[d], domain.points[v][d]);
+        max[d] = std::max(max[d], domain.points[v][d]);
+    }
+    double bboxdiagsize = (max - min).norm();
+    std::cerr << "HR = Hausdorff dist / BBOX diagonal =  " << 100 * dist / bboxdiagsize << " %" << std::endl;
+
+
 
 }

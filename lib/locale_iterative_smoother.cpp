@@ -4,31 +4,11 @@
 using namespace UM;
 
 // UTILS :
-constexpr int TET_MATRIX_HEX_LEXICOGRAPHIC_SPLIT[24][4] = {
-	{0,1,3,4},{0,1,2,5},{0,2,6,1},{0,2,4,3},
-	{0,4,1,6},{0,4,5,2},{1,3,0,7},{1,3,2,5},
-	{1,5,3,4},{1,5,7,0},{2,3,7,0},{2,3,6,1},
-	{2,6,0,7},{2,6,4,3},{3,7,6,1},{3,7,2,5},
-	{4,5,0,7},{4,5,1,6},{4,6,5,2},{4,6,7,0},
-	{5,7,1,6},{5,7,3,4},{6,7,5,2},{6,7,4,3}
-};
+
 const vec3 hex_ref[8] = {
 	{0,0,0}, {1,0,0}, {0,1,0}, {1,1,0},
 	{0,0,1}, {1,0,1}, {0,1,1}, {1,1,1},
 };
-void init_coefs(std::array<std::array<vec3, 4>, 24>& hexrefcoef) {
-	for (int i : range(24)) {
-		vec3 tet_ref[4];
-		for (int j : range(4)) tet_ref[j] = hex_ref[TET_MATRIX_HEX_LEXICOGRAPHIC_SPLIT[i][j]];
-
-		UM::mat3x3 M = { tet_ref[1] - tet_ref[0], tet_ref[2] - tet_ref[0], tet_ref[3] - tet_ref[0] };
-		UM::mat3x3 invM = M.invert();
-		double detM = M.det();
-		invM = invM.transpose();
-		hexrefcoef[i] = { -invM[0] - invM[1] - invM[2], invM[0], invM[1], invM[2] };
-	}
-
-}
 
 inline UM::mat3x3 dual_basis(const UM::mat3x3& J) {
 	return
@@ -75,13 +55,6 @@ iterative_smoother::iterative_smoother(Hexahedra& m)
 	, vert_type_(m_.nverts(), 0)
 	, order_(m_.nverts(), 0)
 {
-	init_coefs(hexrefcoef_);
-
-	for (int c : range(m_.ncells())) {
-		for (int t : range(24)) for (int tv : range(4)) {
-			vert_one_ring_[m.vert(c, TET_MATRIX_HEX_LEXICOGRAPHIC_SPLIT[t][tv])].push_back(24 * c + t);
-		}
-	}
 	scale_ = 0;
 	for (int c : range(m_.ncells())) for (int cf : range(6)) for (int cfv : range(4))
 		scale_ += (m.points[m.facet_vert(c, cf, cfv)] - m.points[m.facet_vert(c, cf, (cfv + 1) % 4)]).norm();
@@ -130,7 +103,7 @@ double iterative_smoother::compute_hextet_jacobian(const int i, const vec3& v, c
 	J = { UM::vec3(0,0,0), UM::vec3(0,0,0),UM::vec3(0,0,0) };
 	std::array<vec3, 4> V;
 	for (int j : range(4)) {
-		int index = m_.vert(h, TET_MATRIX_HEX_LEXICOGRAPHIC_SPLIT[t][j]);
+		int index = m_.vert(h, optimized_tets_[t][j]);
 		if (index == i) V[j] = v;
 		else V[j] = m_.points[index];
 	}
@@ -144,8 +117,8 @@ double iterative_smoother::evaluate_vert_energy(const int i, const UM::vec3& v, 
 	double E = 0;
 	minDetJ = 1E100;
 	for (int ht : vert_one_ring_[i]) {
-		int h = ht / 24;
-		int t = ht % 24;
+		int h = ht / optimized_tets_.size();
+		int t = ht % optimized_tets_.size();
 		mat3x3 J, K;
 		double detJ = compute_hextet_jacobian(i, v, h, t, J, K);
 		minDetJ = std::min(minDetJ, detJ);
@@ -165,8 +138,8 @@ double iterative_smoother::compute_vert_grad_hess(const int i, UM::vec3& grad, U
 	vert_min_det_[i] = 1E100;
 
 	for (int ht : vert_one_ring_[i]) {
-		int h = ht / 24;
-		int t = ht % 24;
+		int h = ht / optimized_tets_.size();
+		int t = ht % optimized_tets_.size();
 		mat3x3 J, K;
 		double detJ = compute_hextet_jacobian(i, m_.points[i], h, t, J, K);
 		vert_min_det_[i] = std::min(vert_min_det_[i], detJ);
@@ -177,7 +150,7 @@ double iterative_smoother::compute_vert_grad_hess(const int i, UM::vec3& grad, U
 		double g = (1 + detJ * detJ) / c1;
 		int i_ref = 0;
 		E += ((1 - theta_) * f + theta_ * g);
-		for (int j : range(4)) if (m_.vert(h, TET_MATRIX_HEX_LEXICOGRAPHIC_SPLIT[t][j]) == i) i_ref = j;
+		for (int j : range(4)) if (m_.vert(h, optimized_tets_[t][j]) == i) i_ref = j;
 		for (int d : range(3)) {
 			UM::vec3 dfda = J[d] * (2. / c2) - K[d] * ((2. * f * c3) / (3. * c1));
 			UM::vec3 dgda = K[d] * ((2 * detJ - g * c3) / c1);
@@ -299,17 +272,38 @@ void iterative_smoother::update_order() {
 	int cnt = 0;
 	for (int t = 3; t >= 0; t--) {
 		for (int i = 0; i < m_.nverts(); i++) {
-			if (vert_type_[i] == t) order_[i] = cnt++;
+			if (vert_type_[i] == t) order_[cnt++] = i;
+		}
+	}
+}
+
+void iterative_smoother::update_connectivity() {
+	hexrefcoef_.resize(optimized_tets_.size());
+	for (int i : range(optimized_tets_.size())) {
+		vec3 tet_ref[4];
+		for (int j : range(4)) tet_ref[j] = hex_ref[optimized_tets_[i][j]];
+
+		UM::mat3x3 M = { tet_ref[1] - tet_ref[0], tet_ref[2] - tet_ref[0], tet_ref[3] - tet_ref[0] };
+		UM::mat3x3 invM = M.invert();
+		double detM = M.det();
+		invM = invM.transpose();
+		hexrefcoef_[i] = { -invM[0] - invM[1] - invM[2], invM[0], invM[1], invM[2] };
+	}
+	vert_one_ring_.clear(); vert_one_ring_.resize(m_.nverts());
+	for (int c : range(m_.ncells())) {
+		for (int t : range(optimized_tets_.size())) for (int tv : range(4)) {
+			vert_one_ring_[m_.vert(c, optimized_tets_[t][tv])].push_back(optimized_tets_.size() * c + t);
 		}
 	}
 }
 
 
-
 void iterative_smoother::run_iter() {
 	update_order();
-	for (int ip = 0; ip < m_.nverts(); ip++) if (!lock_[order_[ip]]) {
+	update_connectivity();
+	for (int ip = 0; ip < m_.nverts(); ip++) {
 		int i = order_[ip];
+		if (lock_[i]) continue;
 		vec3 grad;
 		mat3x3 hess;
 		double actual_E = compute_vert_grad_hess(i, grad, hess);
@@ -318,6 +312,16 @@ void iterative_smoother::run_iter() {
 		double new_E;
 		double l = linesearch(i, dir, actual_E, new_E);
 		m_.points[i] = place_on_bnd(i, m_.points[i] - l * dir);
+
+		//debug
+		//{
+		//	PointAttribute<int> prio(m_);
+		//	PointAttribute<int> order(m_);
+		//	for (int v : range(m_.nverts())) prio[v] = vert_type_[v];
+		//	for (int v : range(m_.nverts())) order[v] = order_[v];
+		//	write_by_extension("debug.geogram", m_, VolumeAttributes{ {{"type", prio.ptr},{"order", order.ptr}},{},{},{} });
+
+		//}
 
 		update_eps(i, actual_E, new_E);
 	}

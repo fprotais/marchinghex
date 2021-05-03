@@ -60,7 +60,7 @@ inline void sampletriangle(const std::array<vec3, 3>& tri, int edge_sampling, st
 }
 
 double hausdorff_dist(const UM::Hexahedra& hex, const UM::Tetrahedra& tet, int tri_sampling) {
-
+	if (hex.nfacets() == 0 || tet.nfacets() == 0) return std::numeric_limits<double>::infinity();
 	std::vector<vec3> tet_points;
 	std::vector<std::array<vec3, 3>> tet_boundary;
 	VolumeConnectivity tet_vec(tet);

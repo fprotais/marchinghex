@@ -1,6 +1,25 @@
 #include <ultimaille/all.h>
 #include <array>
 
+static const std::vector<std::array<int, 4>> TET_MATRIX_HEX_LEXICOGRAPHIC_24_SPLIT = { {
+	{0,1,3,4},{0,1,2,5},{0,2,6,1},{0,2,4,3},
+	{0,4,1,6},{0,4,5,2},{1,3,0,7},{1,3,2,5},
+	{1,5,3,4},{1,5,7,0},{2,3,7,0},{2,3,6,1},
+	{2,6,0,7},{2,6,4,3},{3,7,6,1},{3,7,2,5},
+	{4,5,0,7},{4,5,1,6},{4,6,5,2},{4,6,7,0},
+	{5,7,1,6},{5,7,3,4},{6,7,5,2},{6,7,4,3}
+} };
+
+static const std::vector<std::array<int, 4>> TET_MATRIX_HEX_LEXICOGRAPHIC_SJ_SPLIT = { {
+	{0,1,2,4},
+	{1,3,0,5},
+	{2,0,3,6},
+	{3,2,1,7},
+	{4,6,5,0},
+	{5,4,7,1},
+	{6,7,4,2},
+	{7,5,6,3},
+} };
 
 class boundary_matcher {
 public:
@@ -61,7 +80,7 @@ public:
 	double min_det_project_ = 0.1;
 	double theta_ = 0.5;
 
-
+	std::vector<std::array<int, 4>> optimized_tets_ = TET_MATRIX_HEX_LEXICOGRAPHIC_SJ_SPLIT;
 
 private:
 	double compute_hextet_jacobian(const int i, const UM::vec3& v, const int h, const int t, UM::mat3x3& J, UM::mat3x3& K);
@@ -70,8 +89,10 @@ private:
 	double linesearch(const int i, const UM::vec3& dir, const double prev_E, double& new_E);
 	UM::vec3 place_on_bnd(const int i, const UM::vec3& v);
 
+	void update_connectivity();
 	void update_eps(const int i, const double prev_E, const double new_E);
 	void update_order();
+
 	std::vector<int> order_;
 	std::vector<bool> lock_;
 	std::vector<double> vert_eps_;
@@ -81,7 +102,7 @@ private:
 	std::vector<std::vector<int>> vert_bnd_projection_triangles_;
 	std::vector<std::vector<int>> vert_bnd_projection_segments_;
 	std::vector<int> vert_bnd_projection_point_;
-	std::array<std::array<UM::vec3, 4>, 24> hexrefcoef_;
+	std::vector<std::array<UM::vec3, 4>> hexrefcoef_;
 	double scale_;
 
 

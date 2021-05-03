@@ -896,7 +896,10 @@ void grid_pattern_extractor::grid_pre_processing() {
 			std::array<bool, 4> s;
 			FOR(i, 4) s[i] = vert_is_in_[h][rot_facet_vertex[2 * d + dd][i]];
 			// if face is 0-1-0-1 or 1-0-1-0 it needs splitting:
-			if (s[0] && !s[1] && s[2] && !s[3] || !s[0] && s[1] && !s[2] && s[3]) split[h][d] = true;
+			if (s[0] && !s[1] && s[2] && !s[3] || !s[0] && s[1] && !s[2] && s[3]) {
+				split[h][(d+1)%3] = true;
+				//split[h][d] = true;
+			}
 		}
 		if (split[h][0] || split[h][1] || split[h][2]) {
 			pile.push_back(h);
@@ -983,8 +986,8 @@ void grid_pattern_extractor::grid_pre_processing() {
 				int o_i_1 = binary_facet_vertex[2 * dim_cut][fi];
 				int o_i_2 = binary_facet_vertex[2 * dim_cut + 1][fi];
 				vec3 new_v = 0.5 * (hex[o_i_1] + hex[o_i_2]);
-				if (vert_is_in_[h][o_i_2] && !vert_is_in_[h][o_i_1]) new_v = 0.5 * (hex[o_i_2] + bnd_intersections_[h][3 * o_i_2 + dim_cut]);
-				if (!vert_is_in_[h][o_i_2] && vert_is_in_[h][o_i_1]) new_v = 0.5 * (hex[o_i_1] + bnd_intersections_[h][3 * o_i_1 + dim_cut]);
+				if (vert_is_in_[h][o_i_2] && !vert_is_in_[h][o_i_1]) new_v = 0.5 * (hex[o_i_2] + default_bnd_intersections_[h][3 * o_i_2 + dim_cut]);
+				if (!vert_is_in_[h][o_i_2] && vert_is_in_[h][o_i_1]) new_v = 0.5 * (hex[o_i_1] + default_bnd_intersections_[h][3 * o_i_1 + dim_cut]);
 				hex1[d_jump[dim_cut][0] + i] = new_v;
 				hex2[i] = new_v;
 				bool has_in = vert_is_in_[h][o_i_2] || vert_is_in_[h][o_i_1];
@@ -1039,5 +1042,4 @@ void grid_pattern_extractor::grid_pre_processing() {
 	std::vector<int> old2new;
 	grid_.points.delete_points(tokill, old2new);
 	FOR(h, grid_.ncells())  FOR(hc, 8) grid_.vert(h, hc) = old2new[grid_.vert(h, hc)];
-
 }

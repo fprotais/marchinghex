@@ -313,16 +313,6 @@ void iterative_smoother::run_iter() {
 		double l = linesearch(i, dir, actual_E, new_E);
 		m_.points[i] = place_on_bnd(i, m_.points[i] - l * dir);
 
-		//debug
-		//{
-		//	PointAttribute<int> prio(m_);
-		//	PointAttribute<int> order(m_);
-		//	for (int v : range(m_.nverts())) prio[v] = vert_type_[v];
-		//	for (int v : range(m_.nverts())) order[v] = order_[v];
-		//	write_by_extension("debug.geogram", m_, VolumeAttributes{ {{"type", prio.ptr},{"order", order.ptr}},{},{},{} });
-
-		//}
-
 		update_eps(i, actual_E, new_E);
 	}
 	double glob_min = 1E100;

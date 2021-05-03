@@ -169,6 +169,8 @@ int main(int argc, char** argv) {
     smoother.scale_back();
 
     std::cerr << "FINISHED." << std::endl;
+    std::cerr << "Computing distance between domain and hexmesh... " << std::endl;
+
     double dist = hausdorff_dist(hex, domain);
     std::cerr << "Hausdorff dist: " << dist << std::endl;
     if (domain.nverts() == 0) return 0;
@@ -179,7 +181,6 @@ int main(int argc, char** argv) {
     }
     double bboxdiagsize = (max - min).norm();
     std::cerr << "HR = Hausdorff dist / BBOX diagonal =  " << 100 * dist / bboxdiagsize << " %" << std::endl;
-
 
 
 }

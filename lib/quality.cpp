@@ -34,7 +34,7 @@ double hausdorff_dist(const std::vector<vec3>& P, const std::vector<std::array<v
 
 			vec3 X;
 			double dist = point_triangle_squared_distance(P[v], mesh[t], X, l);
-			loc_dist = std::min(dist, loc_dist);
+			loc_dist = std::min(std::sqrt(dist), loc_dist);
 		}
 		dist2mesh[v] = loc_dist;
 		max_dist = std::max(loc_dist, max_dist);

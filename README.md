@@ -13,17 +13,20 @@ The code rely on lib ultimaille and uses its io. Supported mesh files are *geogr
 You can display hexahedral mesh quality using [hexalab.net](https://www.hexalab.net/). 
 For generating and visualising meshes in general, I recommand [gmsh](http://gmsh.info/) or [Graphite](http://alice.loria.fr/index.php?option=com_content&view=article&id=22).
 
-
+**Following ultimaille, this code is under GNU Affero General Public License v3.0 (see LICENSE).**
+If you are faithful to AGPL but still want to include this code in a commercial software, feel free to contact me, I am always happy to work with new people. 
+And the same goes for non-commercial and academic software of course. 
+1
 \[1\] Dhondt, G. (2001). *A new automatic hexahedral mesher based on cutting.* International Journal for Numerical Methods in Engineering, 50(9), 2109-2126.
 
 # Use CMake to build the project:
 ```sh
-git clone --recurse-submodules https://github.com/fprotais/marchinghex
-cd marchinghex
-mkdir build
-cd build
-cmake ..
-make
+git clone --recurse-submodules https://github.com/fprotais/marchinghex &&
+cd marchinghex &&
+mkdir build &&
+cd build &&
+cmake .. &&
+make -j 
 ```
 Build on windows works only with static libs. 
 

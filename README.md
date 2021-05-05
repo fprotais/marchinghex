@@ -16,7 +16,7 @@ For generating and visualising meshes in general, I recommand [gmsh](http://gmsh
 **Following ultimaille, this code is under GNU Affero General Public License v3.0 (see LICENSE).**
 If you are faithful to AGPL but still want to include this code in a commercial software, feel free to contact me, I am always happy to work with new people. 
 And the same goes for non-commercial and academic software of course. 
-1
+
 \[1\] Dhondt, G. (2001). *A new automatic hexahedral mesher based on cutting.* International Journal for Numerical Methods in Engineering, 50(9), 2109-2126.
 
 # Use CMake to build the project:

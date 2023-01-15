@@ -22,13 +22,18 @@ endif()
 file(GLOB SOURCES lib/*.cpp lib/*.h )
 add_library(libmarchinghex ${SOURCES})
 target_link_libraries(libmarchinghex ultimaille)
+
+add_library(libsmoothing smoother/vertexBasedSmoothing.cpp smoother/vertexBasedSmoothing.h)
+target_link_libraries(libsmoothing ultimaille libmarchinghex)
+
+include_directories(smoother)
 include_directories(lib)
 
 add_executable(marchinghex_bimaterial bin/marchinghex_bimaterial.cpp)
 target_link_libraries(marchinghex_bimaterial ultimaille libmarchinghex)
 
 add_executable(marchinghex_hexmeshing bin/marchinghex_hexmeshing.cpp)
-target_link_libraries(marchinghex_hexmeshing ultimaille libmarchinghex)
+target_link_libraries(marchinghex_hexmeshing ultimaille libmarchinghex libsmoothing)
 
 add_executable(gridgenerator bin/gridgenerator.cpp)
 target_link_libraries(gridgenerator ultimaille libmarchinghex)
@@ -39,7 +44,7 @@ target_link_libraries(make_examples ultimaille libmarchinghex)
 
 if(OpenMP_CXX_FOUND)
     target_link_libraries(libmarchinghex OpenMP::OpenMP_CXX)
-	target_link_libraries(marchinghex_bimaterial OpenMP::OpenMP_CXX)
+	  target_link_libraries(marchinghex_bimaterial OpenMP::OpenMP_CXX)
     target_link_libraries(marchinghex_hexmeshing OpenMP::OpenMP_CXX)
     target_link_libraries(gridgenerator OpenMP::OpenMP_CXX)
     target_link_libraries(make_examples OpenMP::OpenMP_CXX)

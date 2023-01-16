@@ -20,7 +20,7 @@ public:
 	void set_locked_vertices(const std::vector<bool>& locks);
 
 	double _min_SJ_project_ = 0.1; // won't project if quality is worse than that
-	double _min_SJ_update = 0.2; // will try to improve elements with quality worse than that
+	double _min_SJ_update = 0.7; // will try to improve elements with quality worse than that
 	double _theta = 1e-3; // elliptic smoothing parameter
 	double _eps = 1e-5; // elliptic smoothing parameter
 

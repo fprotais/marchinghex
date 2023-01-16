@@ -6,6 +6,15 @@
 using namespace UM;
 #define FOR(i, n) for(int i = 0; i < n; i++)
 
+#define DEBUG 0
+#if DEBUG
+#define DEBUGCODE(X) X 
+#else
+#define DEBUGCODE(X) 
+#endif
+#define DBGMSG(X) DEBUGCODE(std::cout << X << "\n";)
+#define DBGVARIABLE(X) DEBUGCODE(std::cout << #X << ": " << X << "\n";)
+
 
 
 vertex_smoother::vertex_smoother(UM::Hexahedra& m)
@@ -187,10 +196,12 @@ void vertex_smoother::run_iter() {
 		vec3 originalPt = _pts[v];
 		vec3 bestLocation = _pts[v];
 		double maxMinSJ = compute_vert_minSJ(v);
+		DBGVARIABLE(maxMinSJ);
 		for (double tau : Tau) {
 			_pts[v] = originalPt + tau * dir; 
 			double sj = compute_vert_minSJ(v);
 			if (sj > maxMinSJ) {
+				DBGMSG("new choice: " << tau << "| sj: " << sj);
 				maxMinSJ = sj;
 				bestLocation = _pts[v];
 			}
@@ -200,34 +211,45 @@ void vertex_smoother::run_iter() {
 	auto furthest_line_search = [&](int v, vec3 dir) {
 		constexpr double Tau[] = { 1,0.875,.75, 0.625, .5,.25, 0.125, 0.05 };
 		vec3 originalPt = _pts[v];
-		vec3 bestLocation = _pts[v];
 		double minSJ = std::min(_min_SJ_project_, compute_vert_minSJ(v));
+		DBGVARIABLE(minSJ);
 		for (double tau : Tau) {
 			_pts[v] = originalPt + tau * dir; 
 			double sj = compute_vert_minSJ(v);
 			if (sj > minSJ) {
-				return bestLocation;
+				DBGMSG("new choice: " << tau << "| sj: " << sj);
+				return _pts[v];
 			}
 		}
-		return bestLocation;
+		return originalPt;
 	};
 	for (int v : _vert_order) {
 		if (_vert_data[v].locked) continue;
 		if (_vert_data[v].is_bnd_compliant && _vert_data[v].nb_bad_tets == 0) continue;
+		DBGVARIABLE(v);
+		DBGVARIABLE(_pts[v]);
 		mat3x3 hess;
 		vec3 dir = compute_vert_elliptic_grad_hess(v, hess);
-		if (hess.det() < 1e-8) {
+		DBGVARIABLE(hess.det());
+		DBGVARIABLE(hess);
+		if (hess.det() >= 1e-10) {
 			dir = compute_naive_laplacian_direction(v);
 		}
 		else {
+			DBGMSG("lapl");
 			dir = hess.invert() * dir;
 			dir *= -1;
 		}
+		DBGVARIABLE(dir);
 		_pts[v] = maxSJ_line_search(v, dir);
+		DBGVARIABLE(_pts[v]);
 		if (_vert_data[v].type > 0) {
 			vec3 projPos = projected_position(v);
+			DBGVARIABLE(projPos);
 			_pts[v] = furthest_line_search(v, projPos - _pts[v]);
 			if ((_pts[v] - projPos).norm() < 1e-8) _vert_data[v].is_bnd_compliant = true;
+			DBGVARIABLE(_pts[v]);
+			DBGVARIABLE(_vert_data[v].is_bnd_compliant);
 		}
 		for (int t : _vert_data[v].tets) udpdate_tet_quality(t);
 	}

@@ -97,6 +97,7 @@ private:
 	UM::vec3 projected_position(int v) const;
 
 	UM::vec3 compute_vert_elliptic_grad_hess(int v, UM::mat3x3& hess) const;
+	UM::vec3 compute_vert_elliptic_grad_trunc_hess(int v, UM::mat3x3& hess) const;
 	UM::vec3 compute_naive_laplacian_direction(int v) const;
 
 

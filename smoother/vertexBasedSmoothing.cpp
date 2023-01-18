@@ -192,7 +192,7 @@ UM::vec3 vertex_smoother::projected_position(int v) const {
 
 void vertex_smoother::run_iter() {
 	auto maxSJ_line_search = [&](int v, vec3 dir) {
-		constexpr double Tau[] = { 4,2,1,.5,.25, 0.125 };
+		constexpr double Tau[] = { 1,.5,.25, 0.125, 0.0625 };
 		vec3 originalPt = _pts[v];
 		vec3 bestLocation = _pts[v];
 		double maxMinSJ = compute_vert_minSJ(v);
@@ -223,31 +223,33 @@ void vertex_smoother::run_iter() {
 		}
 		return originalPt;
 	};
+
 	for (int v : _vert_order) {
 		if (_vert_data[v].locked) continue;
 		if (_vert_data[v].is_bnd_compliant && _vert_data[v].nb_bad_tets == 0) continue;
 		DBGVARIABLE(v);
-		DBGVARIABLE(_pts[v]);
-		mat3x3 hess;
-		vec3 dir = compute_vert_elliptic_grad_hess(v, hess);
-		DBGVARIABLE(hess.det());
-		DBGVARIABLE(hess);
-		if (hess.det() >= 1e-10) {
-			dir = compute_naive_laplacian_direction(v);
-		}
-		else {
-			DBGMSG("lapl");
+		if (_vert_data[v].is_bnd_compliant) {
+			DBGVARIABLE(_pts[v]);
+			mat3x3 hess;
+			vec3 dir = compute_vert_elliptic_grad_trunc_hess(v, hess);
+			DBGVARIABLE(hess.det());
+			DBGVARIABLE(hess);
 			dir = hess.invert() * dir;
 			dir *= -1;
+			if (dir.norm() <= 1e-10 || dir.norm() >= 1e6) {
+				dir = compute_naive_laplacian_direction(v);
+				DBGMSG("lapl");
+			}
+			DBGVARIABLE(dir);
+			_pts[v] = maxSJ_line_search(v, dir);
+			DBGVARIABLE(_pts[v]);
 		}
-		DBGVARIABLE(dir);
-		_pts[v] = maxSJ_line_search(v, dir);
-		DBGVARIABLE(_pts[v]);
 		if (_vert_data[v].type > 0) {
+			DBGVARIABLE(_pts[v]);
 			vec3 projPos = projected_position(v);
 			DBGVARIABLE(projPos);
 			_pts[v] = furthest_line_search(v, projPos - _pts[v]);
-			if ((_pts[v] - projPos).norm() < 1e-8) _vert_data[v].is_bnd_compliant = true;
+			_vert_data[v].is_bnd_compliant = (_pts[v] - projPos).norm() < 1e-8;
 			DBGVARIABLE(_pts[v]);
 			DBGVARIABLE(_vert_data[v].is_bnd_compliant);
 		}
@@ -351,6 +353,62 @@ vec3 vertex_smoother::compute_vert_elliptic_grad_hess(int v, UM::mat3x3& hess) c
 				hess[d1][d2] += _tets[t].pre_computed[loc_id] * (locH * _tets[t].pre_computed[loc_id]);
 			}
 		}
+	}
+	return grad;
+}
+
+vec3 vertex_smoother::compute_vert_elliptic_grad_trunc_hess(int v, UM::mat3x3& hess) const {
+	vec3 grad = { 0,0,0 };
+	hess = { UM::vec3(0,0,0), UM::vec3(0,0,0),UM::vec3(0,0,0) };
+	double E = 0;
+	for (int t : _vert_data[v].tets) {
+
+		mat3x3 J = { UM::vec3(0,0,0), UM::vec3(0,0,0),UM::vec3(0,0,0) };
+		FOR(tv, 4) FOR(d, 3)
+			J[d] += _tets[t].pre_computed[tv] * _pts[_tets[t].verts[tv]][d];
+		mat3x3 K = dual_basis(J);
+		double detJ = J.det();
+
+		double c1 = chi(_eps, detJ);
+		double c2 = std::pow(c1, 2. / 3.);
+		double c3 = chi_deriv(_eps, detJ);
+		double f = (J[0] * J[0] + J[1] * J[1] + J[2] * J[2]) / c2;
+		double g = (1 + detJ * detJ) / c1;
+		E += ((1 - _theta) * f + _theta * g);
+
+		int loc_id = 0;
+		FOR(tv, 4) if ( _tets[t].verts[tv] == v) loc_id = tv;
+
+		double val1 =  2. / c2;
+		double val2 =  (2. * f * c3) / (3. * c1);
+		double val3 =  (2 * detJ - g * c3) / c1;
+
+		double c3dc1 = c3 / c1;
+		double val4 = val1 * (2./3.) * c3dc1;//(4.*c3)/(3.*c2*c1);
+		double val5 = val2 * (5./3.) * c3dc1;//(10.*f* c3 * c3)/(9.*c1 * c1);
+		double val6 = 2./c1 - 2. * val3 * c3dc1;//2./c1 - (2.*c3*(2.*detJ - g*c3))/ (c1 * c1);
+		
+		mat<3,3> Id = mat<3,3>::identity();
+
+		FOR(d, 3) { 
+			UM::vec3 dfda = J[d] * (val1) - K[d] * (val2);
+			UM::vec3 dgda = K[d] * (val3);
+			grad[d] += (dfda + (dgda - dfda) * _theta) * _tets[t].pre_computed[loc_id];
+		
+			//would looping over d1 and d2 here would work? is it more/less operations?
+			mat<3,1> A = {{{J[d].x}, {J[d].y}, {J[d].z}}};
+			mat<3,1> B = {{{K[d].x}, {K[d].y}, {K[d].z}}};
+
+			mat<3,3> AB = A*B.transpose();
+			mat<3,3> BB = B*B.transpose();
+
+            mat<3,3> Fii = Id*(val1) - (AB + AB.transpose())*(val4) + (BB)*(val5);
+            mat<3,3> Gii = (BB)*(val6);
+            mat<3,3> locH = Fii + (Gii - Fii) * _theta;
+			hess[d][d] += _tets[t].pre_computed[loc_id] * (locH * _tets[t].pre_computed[loc_id]);
+
+		}
+
 	}
 	return grad;
 }

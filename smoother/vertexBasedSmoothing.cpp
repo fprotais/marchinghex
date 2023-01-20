@@ -15,7 +15,7 @@ using namespace UM;
 #define DBGMSG(X) DEBUGCODE(std::cout << X << "\n";)
 #define DBGVARIABLE(X) DEBUGCODE(std::cout << #X << ": " << X << "\n";)
 
-
+#define PICVALUEMSG(x, val, VAR) if (x == val) std::cout << #x << "= " << val << " -> " << #VAR << ": " << VAR << "\n";
 
 vertex_smoother::vertex_smoother(UM::Hexahedra& m)
 : _m(m)
@@ -58,6 +58,7 @@ vertex_smoother::vertex_smoother(UM::Hexahedra& m)
 	FOR(v, _pts.size()) {
 		_vert_order[v] = v;
 		_vert_data[v].verts.assign(vert2vert[v].begin(), vert2vert[v].end());
+		_vert_data[v].minSJ = compute_vert_minSJ(v);
 	}
 
 	_proj.vert2triangles.resize(_pts.size());
@@ -129,20 +130,25 @@ void vertex_smoother::update_order() {
 	}
 }
 
-void vertex_smoother::udpdate_tet_quality(int t) {
+void vertex_smoother::update_tet_quality(int t) {
 	_tets[t].SJ = compute_tet_SJ(t);
-	if (_tets[t].SJ <= _min_SJ_update && !_tets[t].is_bad) {
+	double eq = compute_tet_elliptic_quality(t);
+	bool bad = _tets[t].SJ <= _min_SJ_target
+			 || eq > 4; // magic value? 
+	if (bad && !_tets[t].is_bad) {
 		_tets[t].is_bad = true;
 		for (int v : _tets[t].verts) _vert_data[v].nb_bad_tets++;
+		return;
 	} 
-	else if (_tets[t].SJ > _min_SJ_update && _tets[t].is_bad) {
+	if (!bad && _tets[t].is_bad) {
 		_tets[t].is_bad = false;
 		for (int v : _tets[t].verts) _vert_data[v].nb_bad_tets--;
 	}
 }
+
 void vertex_smoother::update_bad_elements() {
-	FOR(t, _tets.size()) udpdate_tet_quality(t);
-	FOR(v, _pts.size()) if (_vert_data[v].type == 0) _vert_data[v].is_bnd_compliant = true;
+	FOR(t, _tets.size()) update_tet_quality(t);
+	FOR(v, _pts.size())  _vert_data[v].is_bnd_compliant = (_vert_data[v].type == 0);
 }
 
 UM::vec3 vertex_smoother::projected_position(int v) const {
@@ -195,14 +201,18 @@ void vertex_smoother::run_iter() {
 		constexpr double Tau[] = { 1,.5,.25, 0.125, 0.0625 };
 		vec3 originalPt = _pts[v];
 		vec3 bestLocation = _pts[v];
-		double maxMinSJ = compute_vert_minSJ(v);
-		DBGVARIABLE(maxMinSJ);
+		double best_E = compute_vert_elliptic_energy(v);
+		double minSJ = std::min(_vert_data[v].minSJ, _min_SJ_update);
+		DBGVARIABLE(best_E);
 		for (double tau : Tau) {
 			_pts[v] = originalPt + tau * dir; 
-			double sj = compute_vert_minSJ(v);
-			if (sj > maxMinSJ) {
-				DBGMSG("new choice: " << tau << "| sj: " << sj);
-				maxMinSJ = sj;
+			double e = compute_vert_elliptic_energy(v);
+			if (e < best_E) {
+				double sj = compute_vert_minSJ(v);
+				if (sj < minSJ) continue;
+				DBGMSG("new choice: " << tau << "| sj: " << e);
+				best_E = e;
+				_vert_data[v].minSJ = sj;
 				bestLocation = _pts[v];
 			}
 		}
@@ -212,22 +222,28 @@ void vertex_smoother::run_iter() {
 		constexpr double Tau[] = { 1,0.875,.75, 0.625, .5,.25, 0.125, 0.05 };
 		vec3 originalPt = _pts[v];
 		double minSJ = std::min(_min_SJ_project_, compute_vert_minSJ(v));
+		double maxeq = std::max(compute_vert_elliptic_max_quality(v), 10.);
+
 		DBGVARIABLE(minSJ);
 		for (double tau : Tau) {
 			_pts[v] = originalPt + tau * dir; 
 			double sj = compute_vert_minSJ(v);
-			if (sj > minSJ) {
+			double eq = compute_vert_elliptic_max_quality(v);
+			if (sj > minSJ && eq < maxeq) {
 				DBGMSG("new choice: " << tau << "| sj: " << sj);
-				return _pts[v];
+				_vert_data[v].minSJ = sj;
+				return ;
 			}
 		}
-		return originalPt;
+		_pts[v] = originalPt;
+		return;
 	};
 
 	for (int v : _vert_order) {
 		if (_vert_data[v].locked) continue;
 		if (_vert_data[v].is_bnd_compliant && _vert_data[v].nb_bad_tets == 0) continue;
 		DBGVARIABLE(v);
+
 		if (_vert_data[v].is_bnd_compliant) {
 			DBGVARIABLE(_pts[v]);
 			mat3x3 hess;
@@ -236,6 +252,7 @@ void vertex_smoother::run_iter() {
 			DBGVARIABLE(hess);
 			dir = hess.invert() * dir;
 			dir *= -1;
+
 			if (dir.norm() <= 1e-10 || dir.norm() >= 1e6) {
 				dir = compute_naive_laplacian_direction(v);
 				DBGMSG("lapl");
@@ -248,14 +265,15 @@ void vertex_smoother::run_iter() {
 			DBGVARIABLE(_pts[v]);
 			vec3 projPos = projected_position(v);
 			DBGVARIABLE(projPos);
-			_pts[v] = furthest_line_search(v, projPos - _pts[v]);
+			furthest_line_search(v, projPos - _pts[v]);
 			_vert_data[v].is_bnd_compliant = (_pts[v] - projPos).norm() < 1e-8;
 			DBGVARIABLE(_pts[v]);
 			DBGVARIABLE(_vert_data[v].is_bnd_compliant);
 		}
-		for (int t : _vert_data[v].tets) udpdate_tet_quality(t);
+		for (int t : _vert_data[v].tets) update_tet_quality(t);
 	}
 }
+
 UM::vec3 vertex_smoother::compute_naive_laplacian_direction(int v) const {
 	vec3 newPos = _pts[v];
 	for(int o_v : _vert_data[v].verts) newPos += _pts[v];
@@ -300,61 +318,42 @@ inline double chi_deriv(double eps, double det) {
 
 // END UTILS
 
-vec3 vertex_smoother::compute_vert_elliptic_grad_hess(int v, UM::mat3x3& hess) const {
-	vec3 grad = { 0,0,0 };
-	hess = { UM::vec3(0,0,0), UM::vec3(0,0,0),UM::vec3(0,0,0) };
+double vertex_smoother::compute_tet_elliptic_quality(int t) const{
+	mat3x3 J = { UM::vec3(0,0,0), UM::vec3(0,0,0),UM::vec3(0,0,0) };
+	FOR(tv, 4) FOR(d, 3)
+		J[d] += _tets[t].pre_computed[tv] * _pts[_tets[t].verts[tv]][d];
+	double detJ = J.det();
+	if (detJ < 1e-30) return 1e10;
+	double c = std::pow(detJ, 2. / 3.);
+	double f =  (J[0] * J[0] + J[1] * J[1] + J[2] * J[2]) / c;
+	return std::min(1e10, f);
+}
+	
+double vertex_smoother::compute_vert_elliptic_max_quality(int v) const {
+	double maxEQ = 1.;
+	for (int t : _vert_data[v].tets) {
+		maxEQ = std::max(maxEQ, compute_tet_elliptic_quality(t));
+	}
+	return maxEQ;
+}
+
+
+double vertex_smoother::compute_tet_elliptic_energy(int t) const {
+	mat3x3 J = { UM::vec3(0,0,0), UM::vec3(0,0,0),UM::vec3(0,0,0) };
+	FOR(tv, 4) FOR(d, 3)
+		J[d] += _tets[t].pre_computed[tv] * _pts[_tets[t].verts[tv]][d];
+	double detJ = J.det();
+	double c1 = chi(_eps, detJ);
+	double c2 = std::pow(c1, 2. / 3.);
+	return (J[0] * J[0] + J[1] * J[1] + J[2] * J[2]) / c2;
+}
+
+double vertex_smoother::compute_vert_elliptic_energy(int v) const {
 	double E = 0;
 	for (int t : _vert_data[v].tets) {
-
-		mat3x3 J = { UM::vec3(0,0,0), UM::vec3(0,0,0),UM::vec3(0,0,0) };
-		FOR(tv, 4) FOR(d, 3)
-			J[d] += _tets[t].pre_computed[tv] * _pts[_tets[t].verts[tv]][d];
-		mat3x3 K = dual_basis(J);
-		double detJ = J.det();
-
-		double c1 = chi(_eps, detJ);
-		double c2 = std::pow(c1, 2. / 3.);
-		double c3 = chi_deriv(_eps, detJ);
-		double f = (J[0] * J[0] + J[1] * J[1] + J[2] * J[2]) / c2;
-		double g = (1 + detJ * detJ) / c1;
-		E += ((1 - _theta) * f + _theta * g);
-
-		int loc_id = 0;
-		FOR(tv, 4) if ( _tets[t].verts[tv] == v) loc_id = tv;
-		FOR(d, 3) {
-			UM::vec3 dfda = J[d] * (2. / c2) - K[d] * ((2. * f * c3) / (3. * c1));
-			UM::vec3 dgda = K[d] * ((2 * detJ - g * c3) / c1);
-			grad[d] += (dfda + (dgda - dfda) * _theta) * _tets[t].pre_computed[loc_id];
-		}
-
-		double ch1 = (1 - _theta) / c2;
-		double ch2 = (1 - _theta) * (-4.) / 3. * c3 / std::pow(c1, 5. / 3.);
-
-		double ch4 = (1 - _theta) * (2. / 3.) * (1 + 2. / 3.) * (f / (c1 * c1)) 
-			+ _theta / c1 * (2 - 4 * detJ * c3 / c1 + 2 * (1 + detJ * detJ) * c3 * c3 / (c1 * c1));
-		std::array<double, 9> a, b;
-		FOR(d1, 3) FOR(d2, 3) {
-			a[3 * d1 + d2] = J[d1][d2];
-			b[3 * d1 + d2] = K[d1][d2];
-		}
-		std::array<double, 9> vch;
-		FOR(k, 9) vch[k] = a[k] * ch2 + b[k] * ch4;
-		mat<9, 9> M;
-		FOR(k, 9) FOR(l, 9) {
-			if (k == l) M[k][l] = ch1;
-			else M[k][l] = 0;
-			M[k][l] += b[l] * vch[k] + a[l] * b[k] * ch2;
-		}
-
-		FOR(d1, 3) {
-			FOR(d2, 3) {
-				mat3x3 locH;
-				FOR(j, 3) FOR(k, 3) for (int k : range(3)) locH[j][k] = M[3 * d1 + j][3 * d2 + k];
-				hess[d1][d2] += _tets[t].pre_computed[loc_id] * (locH * _tets[t].pre_computed[loc_id]);
-			}
-		}
+		E += compute_tet_elliptic_energy(t);
 	}
-	return grad;
+	return E;
 }
 
 vec3 vertex_smoother::compute_vert_elliptic_grad_trunc_hess(int v, UM::mat3x3& hess) const {
@@ -373,27 +372,23 @@ vec3 vertex_smoother::compute_vert_elliptic_grad_trunc_hess(int v, UM::mat3x3& h
 		double c2 = std::pow(c1, 2. / 3.);
 		double c3 = chi_deriv(_eps, detJ);
 		double f = (J[0] * J[0] + J[1] * J[1] + J[2] * J[2]) / c2;
-		double g = (1 + detJ * detJ) / c1;
-		E += ((1 - _theta) * f + _theta * g);
+		E +=  f;
 
 		int loc_id = 0;
 		FOR(tv, 4) if ( _tets[t].verts[tv] == v) loc_id = tv;
 
 		double val1 =  2. / c2;
 		double val2 =  (2. * f * c3) / (3. * c1);
-		double val3 =  (2 * detJ - g * c3) / c1;
 
 		double c3dc1 = c3 / c1;
 		double val4 = val1 * (2./3.) * c3dc1;//(4.*c3)/(3.*c2*c1);
 		double val5 = val2 * (5./3.) * c3dc1;//(10.*f* c3 * c3)/(9.*c1 * c1);
-		double val6 = 2./c1 - 2. * val3 * c3dc1;//2./c1 - (2.*c3*(2.*detJ - g*c3))/ (c1 * c1);
 		
 		mat<3,3> Id = mat<3,3>::identity();
 
 		FOR(d, 3) { 
 			UM::vec3 dfda = J[d] * (val1) - K[d] * (val2);
-			UM::vec3 dgda = K[d] * (val3);
-			grad[d] += (dfda + (dgda - dfda) * _theta) * _tets[t].pre_computed[loc_id];
+			grad[d] += dfda * _tets[t].pre_computed[loc_id];
 		
 			//would looping over d1 and d2 here would work? is it more/less operations?
 			mat<3,1> A = {{{J[d].x}, {J[d].y}, {J[d].z}}};
@@ -402,9 +397,7 @@ vec3 vertex_smoother::compute_vert_elliptic_grad_trunc_hess(int v, UM::mat3x3& h
 			mat<3,3> AB = A*B.transpose();
 			mat<3,3> BB = B*B.transpose();
 
-            mat<3,3> Fii = Id*(val1) - (AB + AB.transpose())*(val4) + (BB)*(val5);
-            mat<3,3> Gii = (BB)*(val6);
-            mat<3,3> locH = Fii + (Gii - Fii) * _theta;
+            mat<3,3> locH = Id*(val1) - (AB + AB.transpose())*(val4) + (BB)*(val5);
 			hess[d][d] += _tets[t].pre_computed[loc_id] * (locH * _tets[t].pre_computed[loc_id]);
 
 		}

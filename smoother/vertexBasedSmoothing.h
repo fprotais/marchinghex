@@ -2,6 +2,36 @@
 #include <array>
 
 
+
+
+struct triangleMesh {
+	std::vector<UM::vec3> _pts;
+	std::vector<std::array<int, 3>> _tris;
+}
+
+struct curveMesh {
+	std::vector<UM::vec3> _pts;
+	std::vector<std::array<int, 2>> _edges;
+}
+
+     *           6-----------7                                                    +-----------+
+     *          /|          /|                                                   /|          /|
+     *         / |         / |                                                  / |   5     / |
+     *        /  |        /  |                                                 /  |     3  /  |
+     *       4-----------5   |                                                +-----------+   |
+     *       |   |       |   |                                                | 0 |       | 1 |
+     *       |   2-------|---3                                                |   +-------|---+
+     *       |  /        |  /                                                 |  /  2     |  /
+     * Z     | /         | /                                            Z     | /     4   | /
+     * ^  Y  |/          |/                                             ^  Y  |/          |/
+     * | /   0-----------1                                              | /   +-----------+
+     * |/                                                               |/
+     * o----> X      
+struct hexahedralMesh {
+	std::vector<UM::vec3> _pts;
+	std::vector<std::array<int, 8>> _hexes;
+}
+
 static constexpr std::array<std::array<int, 4>, 8> HEX_TO_SJ_TET_SPLIT = { {
 	{0,1,2,4},
 	{1,3,0,5},
@@ -20,8 +50,8 @@ public:
 	void set_locked_vertices(const std::vector<bool>& locks);
 
 	double _min_SJ_project_ = 0.1; // won't project if quality is worse than that
-	double _min_SJ_update = 0.7; // will try to improve elements with quality worse than that
-	double _theta = 1e-3; // elliptic smoothing parameter
+	double _min_SJ_update = 0.4; // will allow moving if quality is better than that
+	double _min_SJ_target = 0.7; // will try to improve elements with quality worse than that
 	double _eps = 1e-5; // elliptic smoothing parameter
 
 	/* 
@@ -58,7 +88,7 @@ public:
 private:
 	double compute_tet_SJ(int t) const;
 	double compute_vert_minSJ(int v) const;
-	void udpdate_tet_quality(int t);
+	void update_tet_quality(int t);
 
 	UM::Hexahedra& _m;
 
@@ -68,6 +98,7 @@ private:
 		bool is_bnd_compliant = false;
 		int type = 0; // 0 is vol, 1 bnd, 2 curve, 3 point 
 		int nb_bad_tets = 0;
+		double minSJ;
 		std::vector<int> verts;
 		std::vector<int> tets;
 	};
@@ -96,7 +127,10 @@ private:
 
 	UM::vec3 projected_position(int v) const;
 
-	UM::vec3 compute_vert_elliptic_grad_hess(int v, UM::mat3x3& hess) const;
+	double compute_tet_elliptic_quality(int t) const;
+	double compute_vert_elliptic_max_quality(int v) const;
+	double compute_tet_elliptic_energy(int t) const;
+	double compute_vert_elliptic_energy(int v) const;
 	UM::vec3 compute_vert_elliptic_grad_trunc_hess(int v, UM::mat3x3& hess) const;
 	UM::vec3 compute_naive_laplacian_direction(int v) const;
 

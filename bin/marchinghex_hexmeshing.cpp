@@ -158,7 +158,7 @@ int main(int argc, char** argv) {
         smoother.update_bad_elements();
 		smoother.update_order();
 
-        FOR(i, 20) {
+        FOR(i, 25) {
             std::cerr << "Iter - " << i << std::endl;
             begin = std::chrono::steady_clock::now();
             smoother.run_iter();

@@ -7,14 +7,14 @@
 struct triangleMesh {
 	std::vector<UM::vec3> _pts;
 	std::vector<std::array<int, 3>> _tris;
-}
+};
 
 struct curveMesh {
 	std::vector<UM::vec3> _pts;
 	std::vector<std::array<int, 2>> _edges;
-}
+};
 
-     *           6-----------7                                                    +-----------+
+    /*           6-----------7                                                    +-----------+
      *          /|          /|                                                   /|          /|
      *         / |         / |                                                  / |   5     / |
      *        /  |        /  |                                                 /  |     3  /  |
@@ -26,11 +26,13 @@ struct curveMesh {
      * ^  Y  |/          |/                                             ^  Y  |/          |/
      * | /   0-----------1                                              | /   +-----------+
      * |/                                                               |/
-     * o----> X      
+     * o----> X                                                         o----> X
+	 */
+
 struct hexahedralMesh {
 	std::vector<UM::vec3> _pts;
 	std::vector<std::array<int, 8>> _hexes;
-}
+};
 
 static constexpr std::array<std::array<int, 4>, 8> HEX_TO_SJ_TET_SPLIT = { {
 	{0,1,2,4},

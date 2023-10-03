@@ -26,7 +26,7 @@ struct curveMesh {
      * ^  Y  |/          |/                                             ^  Y  |/          |/
      * | /   0-----------1                                              | /   +-----------+
      * |/                                                               |/
-     * o----> X      													o----> X
+     * o----> X                                                         o----> X
 	 */
 
 struct hexahedralMesh {

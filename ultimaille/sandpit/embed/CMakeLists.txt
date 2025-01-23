@@ -1,0 +1,5 @@
+add_executable(embed embed.cpp)
+target_link_libraries(embed ${CMAKE_DL_LIBS} ultimaille)
+IF (NOT WIN32)
+  target_link_libraries(embed m)
+ENDIF()

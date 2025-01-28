@@ -1,5 +1,8 @@
 # marchinghex
-Robust hexahedral meshing using Dhondt cut approach \[1\]. 
+Robust hexahedral meshing using Dhondt cut approach.
+
+Technical details are available in a technical report: [https://inria.hal.science/hal-04913435v1](https://inria.hal.science/hal-04913435v1)
+
 The code take as an input ***a grid*** (as an hex mesh) and ***a domain***  (as a tet mesh) and extract an hexahedral mesh of the domain.
 To match with the boundary, the code reads triangles and edges from the domain mesh. 
 
@@ -16,8 +19,6 @@ For generating and visualising meshes in general, I recommand [gmsh](http://gmsh
 **Following ultimaille, this code is under GNU Affero General Public License v3.0 (see LICENSE).**
 If you are faithful to AGPL but still want to include this code in a commercial software, feel free to contact me, I am always happy to work with new people. 
 And the same goes for non-commercial and academic software of course. 
-
-\[1\] Dhondt, G. (2001). *A new automatic hexahedral mesher based on cutting.* International Journal for Numerical Methods in Engineering, 50(9), 2109-2126.
 
 # Use CMake to build the project:
 ```sh
